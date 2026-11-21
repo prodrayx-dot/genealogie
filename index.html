@@ -88,6 +88,7 @@ main{flex:1;min-height:0;display:flex;flex-direction:column}
 .sosa{position:absolute;top:-10px;right:8px;background:var(--gold-bg);color:var(--ink);border:1px solid var(--gold);font-size:11px;font-weight:600;line-height:16px;padding:0 6px;border-radius:8px;font-variant-numeric:tabular-nums}
 .card.ghost{border:1.5px dashed var(--muted);border-left-width:1.5px;background:transparent;box-shadow:none;color:var(--muted);font-size:14px;justify-content:center;text-align:center}
 .tag{display:inline-block;margin-left:8px;background:var(--gold-bg);border:1px solid var(--gold);font-size:12px;font-weight:600;padding:0 6px;border-radius:8px;vertical-align:middle;font-variant-numeric:tabular-nums}
+.amp{font-weight:700;font-size:16px}
 .zoom{position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;gap:6px}
 .hint{position:absolute;left:12px;bottom:12px;font-size:13px;color:var(--muted);background:var(--surface);padding:6px 10px;border-radius:8px;border:1px solid var(--line);max-width:60%}
 
@@ -449,7 +450,7 @@ function pickPerson({title,exclude=[],surname="",sex=""}){return new Promise(res
     const items=allPeople().filter(p=>!ex.has(p.id)&&(!q||fullName(p).toLowerCase().includes(q))).sort((a,b)=>fullName(a).localeCompare(fullName(b),"fr")).slice(0,40);
     list.replaceChildren(...(items.length?items.map(p=>personRow(p,()=>closeModal(p.id))):[h("p",{class:"none"},"Aucune personne trouvée.")]))}
   const g=h("input",{type:"text",id:"pick-given",placeholder:"Premier prénom"}),s=h("input",{type:"text",id:"pick-surname",placeholder:"Nom de naissance",value:surname});
-  const sx=h("select",{id:"pick-sex",value:sex},h("option",{value:""},"Sexe inconnu"),h("option",{value:"M"},"Homme"),h("option",{value:"F"},"Femme"));
+  const sx=h("select",{id:"pick-sex",value:sex},h("option",{value:""},"Sexe inconnu"),h("option",{value:"M"},"Masculin"),h("option",{value:"F"},"Féminin"));
   const create=()=>{if(!g.value.trim()&&!s.value.trim()){toast("Indiquez au moins un prénom ou un nom.");return}
     closeModal(createPerson({given:g.value.trim(),surname:s.value.trim(),sex:sx.value}))};
   fill();
@@ -533,8 +534,7 @@ function layoutDesc(focus){
     cards.push({id:n.id,x:n.cx-CW/2,y});
     let x=left+(n.w-n.gw)/2;
     for(const g of n.groups){const gcx=x+g.w/2;
-      if(g.partner){cards.push({id:g.partner,x:gcx-CW/2,y:py,amp:true});
-        links.push(gcx===n.cx?`M${n.cx},${y+CH}V${py}`:`M${n.cx},${y+CH}V${y+CH+PV/2}H${gcx}V${py}`)}
+      if(g.partner)cards.push({id:g.partner,x:gcx-CW/2,y:py,amp:true}); // pas de trait vers le conjoint : seuls les enfants sont reliés
       let cx=x+(g.w-g.cw)/2;
       for(const c of g.ch){place(c,cx,lvl+1);
         links.push((g.partner?`M${gcx},${py+CH}`:`M${n.cx},${y+CH}V${y+CH+PV/2}H${gcx}`)+`V${mid}H${c.cx}V${ty}`);cx+=c.w+GX}
@@ -583,7 +583,7 @@ function drawTree(animate){
   const nodes=[svg];
   for(const c of Lo.cards){const p=P(c.id);if(!p)continue;
     nodes.push(h("button",{class:"card "+(p.sex||"")+(c.id===S.focus?" focus":""),style:`left:${c.x}px;top:${c.y}px`,"data-id":c.id,
-      "aria-label":fullName(p)},S.sosa.get(c.id)&&h("span",{class:"sosa"},"Sosa "+S.sosa.get(c.id)),avatar(p),h("span",{class:"txt"},h("span",{class:"n1"},(c.amp?"& ":"")+(p.given||"—")),h("span",{class:"n2"},(p.surname||"").toUpperCase()||"—"),h("span",{class:"n3"},lifespan(p)))))}
+      "aria-label":fullName(p)},S.sosa.get(c.id)&&h("span",{class:"sosa"},"Sosa "+S.sosa.get(c.id)),avatar(p),h("span",{class:"txt"},h("span",{class:"n1"},c.amp&&h("b",{class:"amp"},"& "),p.given||"—"),h("span",{class:"n2"},(p.surname||"").toUpperCase()||"—"),h("span",{class:"n3"},lifespan(p)))))}
   for(const g of Lo.ghosts||[])nodes.push(h("button",{class:"card ghost",style:`left:${g.x}px;top:${g.y}px`,"data-ghost":"1","data-child":g.child,"data-slot":String(g.slot)},g.slot?"+ Ajouter la mère":"+ Ajouter le père"));
   world.replaceChildren(...nodes);
   $("btn-open-focus").textContent="Ouvrir la fiche de "+(P(S.focus).given||fullName(P(S.focus)));
@@ -660,7 +660,7 @@ function textInput(id,pid,key,ph){return h("input",{type:"text",id,placeholder:p
   oninput:e=>patchPerson(pid,{[key]:e.target.value},true),onchange:e=>patchPerson(pid,{[key]:e.target.value.trim()})})}
 function openSheet(id){
   if(!P(id))return;S.sheetId=id;const p=P(id),sh=$("sheet");
-  const seg=h("div",{class:"seg",role:"group","aria-label":"Sexe"},[["M","Homme"],["F","Femme"],["","Inconnu"]].map(([v,l])=>
+  const seg=h("div",{class:"seg",role:"group","aria-label":"Sexe"},[["M","Masculin"],["F","Féminin"],["","Inconnu"]].map(([v,l])=>
     h("button",{type:"button","aria-pressed":String((p.sex||"")===v),onclick:e=>{patchPerson(id,{sex:v});seg.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(b===e.currentTarget)))}},l)));
   const dead=h("input",{type:"checkbox",id:"f-deceased",style:"width:22px;height:22px;min-height:0",onchange:e=>{patchPerson(id,{deceased:e.target.checked||undefined});deathBox.style.display=e.target.checked?"":"none"}});
   dead.checked=!!(p.deceased||hasDate(p.death));
