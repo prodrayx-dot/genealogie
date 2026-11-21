@@ -319,7 +319,7 @@ function gedParse(text,newId){
 /* ===== END PURE ===== */
 
 const LS="arbre.v2.";
-const S={people:{},unions:{},meta:{},tab:"arbre",focus:null,sheetId:null,search:"",sort:"surname",dir:1,up:4,down:3,mode:"full",sosa:new Map(),view:{x:0,y:0,k:1},storeErr:false,asked:false};
+const S={people:{},unions:{},meta:{},tab:"arbre",focus:null,sheetId:null,search:"",sort:"surname",dir:1,up:4,down:3,mode:"asc",sosa:new Map(),view:{x:0,y:0,k:1},storeErr:false,asked:false};
 let L={changed:{},lastExportAt:0,lastImportAt:0};
 let idb=null;
 
@@ -503,9 +503,9 @@ function buildTree(m){
     Array.from({length:max},(_,i)=>h("option",{value:String(i+1)},String(i+1))));
   m.append(h("div",{class:"toolbar",id:"tree-bar"},
     h("button",{class:"btn",id:"btn-open-focus",onclick:()=>S.focus&&openSheet(S.focus)},"Ouvrir la fiche"),
-    h("select",{id:"sel-mode","aria-label":"Type de vue",value:S.mode,onchange:e=>{S.mode=e.target.value;setPref("mode",S.mode);S.needCenter=true;drawTree()}},
-      h("option",{value:"full"},"Vue complète"),h("option",{value:"asc"},"Arbre ascendant")),
-    h("span",{class:"lbl"},"Ancêtres"),gens("sel-up",S.up,7),h("span",{class:"lbl",id:"lbl-down"},"Descendants"),gens("sel-down",S.down,6),
+    h("div",{class:"seg",id:"seg-mode",role:"group","aria-label":"Type d'arbre",style:"min-width:250px"},[["asc","Ascendant"],["desc","Descendant"]].map(([v,l])=>
+      h("button",{type:"button","data-mode":v,onclick:()=>{S.mode=v;setPref("mode",v);S.needCenter=true;drawTree()}},l))),
+    h("span",{class:"lbl",id:"lbl-up"},"Générations"),gens("sel-up",S.up,7),h("span",{class:"lbl",id:"lbl-down"},"Générations"),gens("sel-down",S.down,6),
     h("button",{class:"btn",onclick:()=>{const r=S.meta.rootId;if(P(r))setFocus(r)}},"Revenir au départ"),
     h("button",{class:"btn",onclick:addFirst},"+ Personne")),
    h("div",{id:"viewport"},h("div",{id:"world"}),
@@ -514,51 +514,34 @@ function buildTree(m){
   bindPanZoom($("viewport"));S.needCenter=true;
 }
 function setFocus(id,quiet){S.focus=id;setPref("focus",id);S.needCenter=true;if(!quiet&&S.tab==="arbre")drawTree(true)}
-function layout(focus){
-  const cards=[],links=[];
-  const card=(id,x,lvl)=>cards.push({id,x,y:lvl*(CH+GY)});
-  function build(id,depth,seen){
-    const partners=partnersOf(id);
-    const kids=depth<S.down?childrenOf(id).filter(c=>!seen.has(c.id)):[];
-    kids.forEach(c=>seen.add(c.id));
-    const ch=kids.map(c=>build(c.id,depth+1,seen));
-    const bw=CW+partners.length*(CW+PG),cw=ch.reduce((s,c)=>s+c.w,0)+GX*Math.max(0,ch.length-1);
-    return {id,partners,ch,bw,cw,w:Math.max(bw,cw)};
+// arbre descendant : la personne, son conjoint juste en dessous (« & »), puis leurs enfants
+const PV=14;
+function layoutDesc(focus){
+  const cards=[],links=[],STEP=2*CH+PV+GY;
+  function build(id,depth,path){
+    const kids=depth<S.down?childrenOf(id).filter(c=>!path.has(c.id)):[];
+    const groups=[],by=new Map();let solo=null;
+    for(const pid of partnersOf(id)){const g={partner:pid,ch:[]};groups.push(g);by.set(pid,g)}
+    for(const c of kids){const other=(c.parents||[]).find(x=>x!==id&&P(x)),node=build(c.id,depth+1,new Set(path).add(c.id));
+      if(other&&by.has(other))by.get(other).ch.push(node);else{if(!solo){solo={partner:null,ch:[]};groups.push(solo)}solo.ch.push(node)}}
+    for(const g of groups){g.cw=g.ch.reduce((t,c)=>t+c.w,0)+GX*Math.max(0,g.ch.length-1);g.w=Math.max(CW,g.cw)}
+    const gw=groups.reduce((t,g)=>t+g.w,0)+GX*Math.max(0,groups.length-1);
+    return {id,groups,gw,w:Math.max(CW,gw)};
   }
   function place(n,left,lvl){
-    const x0=left+(n.w-n.bw)/2,y=lvl*(CH+GY);n.x0=x0;
-    card(n.id,x0,lvl);
-    n.partners.forEach((pid,i)=>{const px=x0+(i+1)*(CW+PG);card(pid,px,lvl);links.push(`M${px-PG},${y+CH/2}H${px}`)});
-    let cx=left+(n.w-n.cw)/2;
-    for(const c of n.ch){
-      place(c,cx,lvl+1);
-      const child=P(c.id),pi=n.partners.findIndex(pid=>(child.parents||[]).includes(pid));
-      const sx=pi>=0?x0+(pi+1)*(CW+PG)-PG/2:x0+CW/2,sy=pi>=0?y+CH/2:y+CH;
-      const tx2=c.x0+CW/2,ty=(lvl+1)*(CH+GY),mid=y+CH+GY/2;
-      links.push(`M${sx},${sy}V${mid}H${tx2}V${ty}`);
-      cx+=c.w+GX;
-    }
+    const y=lvl*STEP,py=y+CH+PV,mid=py+CH+GY/2,ty=(lvl+1)*STEP;n.cx=left+n.w/2;
+    cards.push({id:n.id,x:n.cx-CW/2,y});
+    let x=left+(n.w-n.gw)/2;
+    for(const g of n.groups){const gcx=x+g.w/2;
+      if(g.partner){cards.push({id:g.partner,x:gcx-CW/2,y:py,amp:true});
+        links.push(gcx===n.cx?`M${n.cx},${y+CH}V${py}`:`M${n.cx},${y+CH}V${y+CH+PV/2}H${gcx}V${py}`)}
+      let cx=x+(g.w-g.cw)/2;
+      for(const c of g.ch){place(c,cx,lvl+1);
+        links.push((g.partner?`M${gcx},${py+CH}`:`M${n.cx},${y+CH}V${y+CH+PV/2}H${gcx}`)+`V${mid}H${c.cx}V${ty}`);cx+=c.w+GX}
+      x+=g.w+GX}
   }
   const root=build(focus,0,new Set([focus]));place(root,0,0);
-  const fx=root.x0+CW/2;
-  function anc(id,depth,seen){
-    const ps=depth<S.up?parentsOf(id).filter(p=>!seen.has(p.id)):[];ps.forEach(p=>seen.add(p.id));
-    const pr=ps.map(p=>anc(p.id,depth+1,seen));
-    const pw=pr.reduce((s,c)=>s+c.w,0)+GX*Math.max(0,pr.length-1);
-    return {id,pr,pw,w:Math.max(CW,pw)};
-  }
-  function placeA(n,left,lvl,isRoot){
-    n.cx=left+n.w/2;if(!isRoot)card(n.id,n.cx-CW/2,lvl);
-    let x=left+(n.w-n.pw)/2;
-    for(const p of n.pr){placeA(p,x,lvl-1,false);x+=p.w+GX}
-  }
-  function linkA(n,lvl,dx){const y=lvl*(CH+GY);
-    for(const p of n.pr){links.push(`M${n.cx+dx},${y}V${y-GY/2}H${p.cx+dx}V${y-GY}`);linkA(p,lvl-1,dx)}}
-  const ar=anc(focus,0,new Set([focus]));
-  const before=cards.length;placeA(ar,0,0,true);const dx=fx-ar.cx;
-  for(let i=before;i<cards.length;i++)cards[i].x+=dx;
-  linkA(ar,0,dx);
-  return {cards,links,fx:fx-CW/2,fy:0};
+  return {cards,links,fx:root.cx-CW/2,fy:0};
 }
 // arbre ascendant : uniquement les ancêtres, père toujours à gauche et mère toujours à droite
 function layoutAsc(focus){
@@ -592,14 +575,15 @@ function drawTree(animate){
     if(!empty)$("main").append(Object.assign(emptyState(),{id:"tree-empty"}));return}
   if(empty)empty.remove();bar.style.display="";vp.style.display="";
   if(!P(S.focus))S.focus=P(S.meta.rootId)?S.meta.rootId:people.sort(byBirth)[0].id;
-  const Lo=S.mode==="asc"?layoutAsc(S.focus):layout(S.focus);lastLayout=Lo;
-  $("sel-down").style.display=$("lbl-down").style.display=S.mode==="asc"?"none":"";
+  const asc=S.mode!=="desc",Lo=asc?layoutAsc(S.focus):layoutDesc(S.focus);lastLayout=Lo;
+  $("sel-down").style.display=$("lbl-down").style.display=asc?"none":"";$("sel-up").style.display=$("lbl-up").style.display=asc?"":"none";
+  document.querySelectorAll("#seg-mode button").forEach(b=>b.setAttribute("aria-pressed",String((b.dataset.mode==="asc")===asc)));
   const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");svg.setAttribute("width","1");svg.setAttribute("height","1");
   for(const d of Lo.links){const p=document.createElementNS("http://www.w3.org/2000/svg","path");p.setAttribute("d",d);svg.append(p)}
   const nodes=[svg];
   for(const c of Lo.cards){const p=P(c.id);if(!p)continue;
     nodes.push(h("button",{class:"card "+(p.sex||"")+(c.id===S.focus?" focus":""),style:`left:${c.x}px;top:${c.y}px`,"data-id":c.id,
-      "aria-label":fullName(p)},S.sosa.get(c.id)&&h("span",{class:"sosa"},"Sosa "+S.sosa.get(c.id)),avatar(p),h("span",{class:"txt"},h("span",{class:"n1"},p.given||"—"),h("span",{class:"n2"},(p.surname||"").toUpperCase()||"—"),h("span",{class:"n3"},lifespan(p)))))}
+      "aria-label":fullName(p)},S.sosa.get(c.id)&&h("span",{class:"sosa"},"Sosa "+S.sosa.get(c.id)),avatar(p),h("span",{class:"txt"},h("span",{class:"n1"},(c.amp?"& ":"")+(p.given||"—")),h("span",{class:"n2"},(p.surname||"").toUpperCase()||"—"),h("span",{class:"n3"},lifespan(p)))))}
   for(const g of Lo.ghosts||[])nodes.push(h("button",{class:"card ghost",style:`left:${g.x}px;top:${g.y}px`,"data-ghost":"1","data-child":g.child,"data-slot":String(g.slot)},g.slot?"+ Ajouter la mère":"+ Ajouter le père"));
   world.replaceChildren(...nodes);
   $("btn-open-focus").textContent="Ouvrir la fiche de "+(P(S.focus).given||fullName(P(S.focus)));
@@ -608,7 +592,7 @@ function drawTree(animate){
 function applyView(anim){const w=$("world");if(!w)return;w.classList.toggle("anim",!!anim);w.style.transform=`translate(${S.view.x}px,${S.view.y}px) scale(${S.view.k})`}
 function centerOn(anim){const vp=$("viewport");if(!vp||!lastLayout)return;const r=vp.getBoundingClientRect();
   if(!S.view.init){S.view.k=r.width<700?0.8:1;S.view.init=true}
-  S.view.x=r.width/2-(lastLayout.fx+CW/2)*S.view.k;S.view.y=r.height*(S.mode==="asc"?0.78:0.5)-(lastLayout.fy+CH/2)*S.view.k;applyView(anim)}
+  S.view.x=r.width/2-(lastLayout.fx+CW/2)*S.view.k;S.view.y=r.height*(S.mode==="desc"?0.18:0.78)-(lastLayout.fy+CH/2)*S.view.k;applyView(anim)}
 function zoomAt(f,cx,cy){const k=Math.min(2.5,Math.max(0.2,S.view.k*f)),r=k/S.view.k;S.view.x=cx-(cx-S.view.x)*r;S.view.y=cy-(cy-S.view.y)*r;S.view.k=k;applyView()}
 function zoomBy(f){const r=$("viewport").getBoundingClientRect();zoomAt(f,r.width/2,r.height/2)}
 function bindPanZoom(vp){
@@ -898,7 +882,7 @@ window.addEventListener("beforeunload",e=>{if(Object.keys(L.changed).length){e.p
 async function boot(){
   try{const c=JSON.parse(localStorage.getItem(LS+"cache")||"null");if(c){S.people=c.people||{};S.unions=c.unions||{};S.meta=c.meta||{}}
     L={...L,...JSON.parse(localStorage.getItem(LS+"local")||"{}")};if(!L.changed)L.changed={};
-    S.focus=localStorage.getItem(LS+"focus")||null;if(localStorage.getItem(LS+"mode")==="asc")S.mode="asc"}catch(e){}
+    S.focus=localStorage.getItem(LS+"focus")||null;if(localStorage.getItem(LS+"mode")==="desc")S.mode="desc"}catch(e){}
   const t=location.hash.slice(1);showTab(["arbre","personnes","sauvegarde"].includes(t)?t:"arbre");
   try{
     idb=await idbOpen();
