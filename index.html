@@ -89,6 +89,23 @@ main{flex:1;min-height:0;display:flex;flex-direction:column}
 .card.ghost{border:1.5px dashed var(--muted);border-left-width:1.5px;background:transparent;box-shadow:none;color:var(--muted);font-size:14px;justify-content:center;text-align:center}
 .tag{display:inline-block;margin-left:8px;background:var(--gold-bg);border:1px solid var(--gold);font-size:12px;font-weight:600;padding:0 6px;border-radius:8px;vertical-align:middle;font-variant-numeric:tabular-nums}
 .amp{font-weight:700;font-size:16px}
+.detail{max-width:900px}
+.dhead{display:flex;gap:16px;align-items:flex-start}
+.dhead h2{font-size:28px;overflow-wrap:anywhere}
+.sx{display:inline-block;min-width:1.1em;font-weight:600;color:var(--u);font-family:var(--body)}
+.sx.M{color:var(--m)} .sx.F{color:var(--f)}
+.facts{margin:8px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:2px}
+.dsec{display:flex;flex-direction:column;gap:8px}
+.dsec h3{font-size:20px;color:var(--accent);display:flex;align-items:center;gap:14px}
+.dsec h3::after{content:"";flex:1;height:1px;background:var(--accent);opacity:.5}
+.plist,.ulist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.plist li{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ulist{gap:12px}
+.union-item .plist{margin:4px 0 0 28px}
+.lnk{border:0;background:none;color:var(--accent);padding:4px 0;min-height:34px;font-weight:500;text-align:left;text-decoration:underline;text-decoration-color:transparent}
+.lnk:hover{text-decoration-color:currentColor}
+.yrs{color:var(--muted);font-variant-numeric:tabular-nums}
+.notes{white-space:pre-wrap;margin:0;max-width:70ch}
 .zoom{position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;gap:6px}
 .hint{position:absolute;left:12px;bottom:12px;font-size:13px;color:var(--muted);background:var(--surface);padding:6px 10px;border-radius:8px;border:1px solid var(--line);max-width:60%}
 
@@ -166,6 +183,7 @@ main{flex:1;min-height:0;display:flex;flex-direction:column}
   <nav class="tabs" role="tablist">
     <button role="tab" data-tab="arbre" id="tab-arbre">Arbre</button>
     <button role="tab" data-tab="personnes" id="tab-personnes">Personnes</button>
+    <button role="tab" data-tab="fiche" id="tab-fiche">Fiche</button>
     <button role="tab" data-tab="sauvegarde" id="tab-sauvegarde">Sauvegarde</button>
   </nav>
   <span style="flex:1"></span>
@@ -484,12 +502,12 @@ function showTab(tab){
   S.tab=tab;document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===tab));
   try{history.replaceState(null,"","#"+tab)}catch(e){}
   const m=$("main");m.replaceChildren();
-  if(tab==="arbre")buildTree(m);else if(tab==="personnes")buildList(m);else buildBackup(m);
+  if(tab==="arbre")buildTree(m);else if(tab==="personnes")buildList(m);else if(tab==="fiche")m.append(h("div",{class:"page detail",id:"detail"}));else buildBackup(m);
   renderAll();
 }
 document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
 function renderAll(){computeSosa();renderStatus();renderBanners();
-  if(S.tab==="arbre")drawTree();else if(S.tab==="personnes")drawList();else drawBackup();
+  if(S.tab==="arbre")drawTree();else if(S.tab==="personnes")drawList();else if(S.tab==="fiche")drawDetail();else drawBackup();
   if(S.sheetId)drawRelations();}
 function emptyState(){return h("div",{class:"empty"},h("h2",{},"Commencez votre arbre"),
   h("p",{},"Créez une première personne, vous-même par exemple. Vous ajouterez ensuite ses parents, son conjoint et ses enfants depuis sa fiche."),
@@ -635,7 +653,7 @@ function drawList(){
     if(ka===null||kb===null)return ka===kb?0:ka===null?1:-1; // fiches sans valeur toujours en fin de liste
     return cmpv(ka,kb)*S.dir||txt(a.given||"")?.localeCompare(txt(b.given||"")||"","fr")||0});
   el.replaceChildren(h("p",{class:"none",style:"margin:0 0 8px"},ps.length+(ps.length>1?" personnes":" personne")),
-    ...ps.map(p=>h("button",{class:"row",onclick:()=>openSheet(p.id)},avatar(p),
+    ...ps.map(p=>h("button",{class:"row",onclick:()=>openDetail(p.id)},avatar(p),
       h("span",{class:"who"},h("b",{},(p.surname||"").toUpperCase()||"—")," ",p.given||"",S.sosa.get(p.id)&&h("span",{class:"tag"},"Sosa "+S.sosa.get(p.id))),
       h("span",{class:"col"},fmtDate(p.birth)?"° "+fmtDate(p.birth):""),
       h("span",{class:"col"},fmtDate(p.death)?"† "+fmtDate(p.death):""),
@@ -672,7 +690,7 @@ function openSheet(id){
     h("div",{class:"sheet-head"},h("span",{id:"sheet-avatar"}),h("h2",{id:"sheet-title"}),
       h("button",{class:"btn icon","aria-label":"Fermer la fiche",onclick:closeSheet},"✕")),
     h("div",{class:"sheet-body"},
-      h("div",{class:"actions"},h("button",{class:"btn",onclick:()=>{closeSheet();setFocus(id,true);showTab("arbre")}},"Voir dans l'arbre"),
+      h("div",{class:"actions"},h("button",{class:"btn",onclick:()=>openDetail(id)},"Fiche détaillée"),h("button",{class:"btn",onclick:()=>{closeSheet();setFocus(id,true);showTab("arbre")}},"Voir dans l'arbre"),
         h("button",{class:"btn",id:"btn-root",onclick:()=>{setRoot(id);toast("Point de départ défini : les numéros Sosa sont recalculés.");renderAll()}},"Définir comme départ (Sosa 1)")),
       h("section",{class:"sec"},h("h3",{},"Identité"),
         h("div",{class:"grid2"},field("Premier prénom","f-given",textInput("f-given",id,"given")),field("Autres prénoms","f-otherGiven",textInput("f-otherGiven",id,"otherGiven"))),
@@ -747,6 +765,65 @@ function drawRelations(force){
       :h("p",{class:"none"},"Aucun conjoint renseigné.")),
     h("section",{class:"sec"},h("h3",{},"Enfants",addChild),kids.length?kids.map(x=>chip(x,()=>removeParent(x.id,id),"Détacher l'enfant")):h("p",{class:"none"},"Aucun enfant renseigné.")),
     ...(sibs.length?[h("section",{class:"sec"},h("h3",{},"Frères et sœurs"),sibs.map(x=>chip(x)))]:[]));
+}
+
+/* ---------- detailed sheet (read-only page) ---------- */
+function openDetail(id){S.detailId=id;setPref("detail",id);if(S.sheetId){S.sheetId=null;$("sheet").classList.remove("on");$("scrim").classList.remove("on")}showTab("fiche")}
+const JOURS=["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"];
+const agree=(p,m,f,u)=>p.sex==="F"?f:p.sex==="M"?m:u;
+function sexMark(p){return h("span",{class:"sx "+(p.sex||"U"),"aria-label":agree(p,"Masculin","Féminin","Sexe inconnu")},agree(p,"♂","♀","?"))}
+function years(p){const b=p.birth&&p.birth.y,d=p.death&&p.death.y;return b||d?(b||"")+"-"+(d||""):""}
+function whenPhrase(d){ // « le 5 juin 1876 (lundi) », « en juin 1876 », « vers 1876 »
+  if(!hasDate(d))return "";
+  if(!d.y&&!d.m)return d.t||"";
+  if(d.q)return fmtDate(d);
+  if(d.d&&d.m&&d.y){const wd=d.y>=1583?" ("+JOURS[new Date(Date.UTC(d.y,d.m-1,d.d)).getUTCDay()]+")":"";return "le "+fmtDate(d)+wd}
+  return "en "+fmtDate(d);
+}
+function ageAt(b,d){
+  if(!b||!d||!b.y||!d.y)return "";
+  const exact=b.m&&b.d&&d.m&&d.d&&!b.q&&!d.q;
+  let a=d.y-b.y;if(exact&&(d.m<b.m||(d.m===b.m&&d.d<b.d)))a--;
+  if(a<0||a>125)return "";
+  return exact?", à l'âge de "+a+(a>1?" ans":" an"):", à environ "+a+" ans";
+}
+function eventLine(verb,d,place,extra){return [verb,whenPhrase(d)].filter(Boolean).join(" ")+(place?" - "+place:"")+(extra||"")}
+function personLink(p,bold){return h("li",{},sexMark(p),bold?h("b",{},longName(p)):h("button",{class:"lnk",onclick:()=>openDetail(p.id)},longName(p))," ",h("span",{class:"yrs"},years(p)),
+  S.sosa.get(p.id)&&h("span",{class:"tag"},"Sosa "+S.sosa.get(p.id)))}
+function drawDetail(){
+  const el=$("detail");if(!el)return;
+  if(!allPeople().length){el.replaceChildren(emptyState());return}
+  const p=P(S.detailId)||P(S.focus)||P(S.meta.rootId)||allPeople()[0];S.detailId=p.id;const id=p.id;
+  const facts=[];
+  if(hasDate(p.birth)||p.birthPlace)facts.push(eventLine(agree(p,"Né","Née","Né(e)"),p.birth,p.birthPlace));
+  if(hasDate(p.death)||p.deathPlace||p.deceased)facts.push(eventLine(agree(p,"Décédé","Décédée","Décédé(e)"),p.death,p.deathPlace,ageAt(p.birth,p.death)));
+  if(p.occupation)facts.push(p.occupation);
+  const parents=parentsOf(id),kids=childrenOf(id);
+  const sibs=parents.length?allPeople().filter(x=>(x.parents||[]).some(y=>parents.some(pp=>pp.id===y))).sort(byBirth):[];
+  const groups=partnersOf(id).map(pid=>({o:P(pid),u:unionsOf(id).find(u=>u.a===pid||u.b===pid),ch:kids.filter(c=>(c.parents||[]).includes(pid))}));
+  const solo=kids.filter(c=>!groups.some(g=>g.ch.includes(c)));
+  const unionItems=groups.map(g=>{const u=g.u||{},married=hasDate(u.date)||u.place;
+    const lead=married?[agree(p,"Marié","Mariée","Marié(e)"),whenPhrase(u.date)].filter(Boolean).join(" ")+(u.place?", "+u.place:"")+", avec ":(g.u?"En union avec ":"Avec ");
+    const div=(u.divorced||hasDate(u.divorce)||u.divorcePlace)?", divorcés"+(hasDate(u.divorce)?" "+whenPhrase(u.divorce):"")+(u.divorcePlace?" - "+u.divorcePlace:""):"";
+    return h("li",{class:"union-item"},h("span",{},h("i",{},lead),h("button",{class:"lnk",onclick:()=>openDetail(g.o.id)},longName(g.o)),years(g.o)&&[" ",h("span",{class:"yrs"},years(g.o))],div,g.ch.length?" dont":""),
+      g.ch.length?h("ul",{class:"plist"},g.ch.map(c=>personLink(c))):null)});
+  if(solo.length)unionItems.push(h("li",{class:"union-item"},h("span",{},h("i",{},groups.length?"Autre parent non renseigné :":"Enfants :")),h("ul",{class:"plist"},solo.map(c=>personLink(c)))));
+  const sect=(title,...kidsEls)=>h("section",{class:"dsec"},h("h3",{},title),kidsEls);
+  const photos=h("div",{class:"photos",id:"detail-photos"});
+  el.replaceChildren(...[
+    h("div",{class:"dhead"},avatar(p,true),h("div",{style:"flex:1;min-width:0"},h("h2",{},sexMark(p),longName(p),S.sosa.get(id)&&h("span",{class:"tag"},"Sosa "+S.sosa.get(id))),
+      facts.length?h("ul",{class:"facts"},facts.map(f=>h("li",{},f))):h("p",{class:"none"},"Aucune information renseignée pour l'instant."))),
+    h("div",{class:"actions"},h("button",{class:"btn primary",onclick:()=>openSheet(id)},"Modifier la fiche"),h("button",{class:"btn",onclick:()=>{setFocus(id,true);showTab("arbre")}},"Voir dans l'arbre")),
+    sect("Parents",parents.length?h("ul",{class:"plist"},parents.map(x=>personLink(x))):h("p",{class:"none"},"Aucun parent renseigné.")),
+    sect("Union(s) et enfant(s)",unionItems.length?h("ul",{class:"ulist"},unionItems):h("p",{class:"none"},"Aucune union ni enfant renseigné.")),
+    sibs.length>1?sect("Frères et sœurs",h("ul",{class:"plist"},sibs.map(x=>personLink(x,x.id===id)))):null,
+    p.notes?sect("Notes",h("p",{class:"notes"},p.notes)):null,
+    sect("Photos et documents",photos)
+  ].filter(Boolean));
+  if(!idb){photos.replaceWith(h("p",{class:"none"},"Aucune image."));return}
+  mediaFor(id).then(list=>{if(S.detailId!==id||!photos.isConnected)return;
+    if(!list.length){photos.replaceWith(h("p",{class:"none"},"Aucune image."));return}
+    photos.replaceChildren(...list.sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)).map(m=>h("button",{"aria-label":m.caption||"Image",onclick:()=>openModal([h("img",{class:"full",src:m.dataUrl,alt:m.caption||""}),m.caption&&h("p",{},m.caption),h("div",{class:"actions"},h("button",{class:"btn primary",onclick:()=>closeModal()},"Fermer"))])},h("img",{src:m.dataUrl,alt:m.caption||""}))))}).catch(()=>{});
 }
 
 /* ---------- photos ---------- */
@@ -882,8 +959,8 @@ window.addEventListener("beforeunload",e=>{if(Object.keys(L.changed).length){e.p
 async function boot(){
   try{const c=JSON.parse(localStorage.getItem(LS+"cache")||"null");if(c){S.people=c.people||{};S.unions=c.unions||{};S.meta=c.meta||{}}
     L={...L,...JSON.parse(localStorage.getItem(LS+"local")||"{}")};if(!L.changed)L.changed={};
-    S.focus=localStorage.getItem(LS+"focus")||null;if(localStorage.getItem(LS+"mode")==="desc")S.mode="desc"}catch(e){}
-  const t=location.hash.slice(1);showTab(["arbre","personnes","sauvegarde"].includes(t)?t:"arbre");
+    S.focus=localStorage.getItem(LS+"focus")||null;S.detailId=localStorage.getItem(LS+"detail")||null;if(localStorage.getItem(LS+"mode")==="desc")S.mode="desc"}catch(e){}
+  const t=location.hash.slice(1);showTab(["arbre","personnes","fiche","sauvegarde"].includes(t)?t:"arbre");
   try{
     idb=await idbOpen();
     const [pp,uu,meta]=await Promise.all([tx("people","readonly",s=>s.getAll()),tx("unions","readonly",s=>s.getAll()),tx("meta","readonly",s=>s.get("app"))]);
