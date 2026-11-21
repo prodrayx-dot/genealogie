@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Arbre de famille">
+<title>Arbre de famille</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: a quiet green registry. One top bar with three tabs, a pannable tree canvas, a side drawer for each person's sheet. */
+:root{
+  --paper:#EDF0EA; --surface:#FBFCF9; --ink:#1C2B24; --muted:#5E6E65; --line:#CBD3CA;
+  --accent:#2F6B4F; --accent-ink:#FFFFFF; --gold:#8F6510; --gold-bg:#F4E7C6;
+  --m:#3F6C8F; --f:#A2557A; --u:#7A8079; --danger:#A33A2B;
+  --display:"Fraunces",Georgia,"Times New Roman",serif;
+  --body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --shadow:0 1px 2px rgba(28,43,36,.08),0 6px 20px rgba(28,43,36,.08);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#141A17; --surface:#1D2521; --ink:#E6ECE6; --muted:#9BAAA0; --line:#34403A;
+    --accent:#6FBF98; --accent-ink:#0F1512; --gold:#E2B55A; --gold-bg:#3A3017;
+    --m:#7FB0D6; --f:#D58FB2; --u:#9AA39C; --danger:#E0786A;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.35);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#141A17; --surface:#1D2521; --ink:#E6ECE6; --muted:#9BAAA0; --line:#34403A;
+  --accent:#6FBF98; --accent-ink:#0F1512; --gold:#E2B55A; --gold-bg:#3A3017;
+  --m:#7FB0D6; --f:#D58FB2; --u:#9AA39C; --danger:#E0786A;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.35);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--paper);color:var(--ink);font:400 17px/1.45 var(--body);display:flex;flex-direction:column;-webkit-text-size-adjust:100%}
+h1,h2,h3{font-family:var(--display);font-weight:650;margin:0;text-wrap:balance}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.btn{min-height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-weight:500;display:inline-flex;align-items:center;gap:8px;justify-content:center}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.btn.danger{color:var(--danger)}
+.btn.small{min-height:36px;padding:0 12px;font-size:15px}
+.btn.icon{width:44px;padding:0;font-size:20px}
+input[type=text],input[type=number],input[type=search],select,textarea{min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);width:100%}
+textarea{min-height:110px;resize:vertical}
+label{font-size:14px;color:var(--muted);font-weight:500;display:block;margin-bottom:4px}
+
+header.top{display:flex;align-items:center;gap:16px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header.top h1{font-size:24px;letter-spacing:-.01em}
+nav.tabs{display:flex;gap:4px;background:var(--paper);padding:4px;border-radius:12px}
+nav.tabs button{min-height:40px;padding:0 16px;border:0;background:transparent;border-radius:9px;font-weight:500;color:var(--muted)}
+nav.tabs button[aria-selected=true]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.status{font-size:14px;display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.status .dot{width:9px;height:9px;border-radius:50%;background:var(--u)}
+.status.ok .dot{background:var(--accent)} .status.warn{color:var(--gold);border-color:var(--gold)} .status.warn .dot{background:var(--gold)}
+.status.bad{color:var(--danger);border-color:var(--danger)} .status.bad .dot{background:var(--danger)}
+.banner{background:var(--gold-bg);color:var(--ink);padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:15px;border-bottom:1px solid var(--line)}
+.banner.bad{background:transparent;border:2px solid var(--danger);margin:8px 16px;border-radius:10px}
+main{flex:1;min-height:0;display:flex;flex-direction:column}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px}
+.toolbar .grow{flex:1;min-width:180px}
+.toolbar select{width:auto}
+.toolbar .lbl{font-size:14px;color:var(--muted)}
+
+/* tree */
+#viewport{flex:1;min-height:320px;position:relative;overflow:hidden;touch-action:none;cursor:grab;
+  background-image:radial-gradient(var(--line) 1px,transparent 1px);background-size:24px 24px}
+#viewport.drag{cursor:grabbing}
+#world{position:absolute;left:0;top:0;transform-origin:0 0}
+#world svg{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+#world svg path{fill:none;stroke:var(--muted);stroke-width:1.5}
+.card{position:absolute;width:176px;height:64px;display:flex;align-items:center;gap:8px;padding:6px 8px 6px 10px;text-align:left;
+  background:var(--surface);border:1px solid var(--line);border-left:5px solid var(--u);border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.card.M{border-left-color:var(--m)} .card.F{border-left-color:var(--f)}
+.card.focus{border-color:var(--accent);border-left-color:var(--accent);box-shadow:0 0 0 3px var(--accent),var(--shadow)}
+.card .txt{min-width:0;flex:1;line-height:1.2}
+.card .n1,.card .n2,.card .n3{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .n1{font-size:14px} .card .n2{font-size:14px;font-weight:600} .card .n3{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.avatar{flex:none;width:40px;height:40px;border-radius:50%;background:var(--paper);color:var(--muted);display:grid;place-items:center;font-weight:600;font-size:14px;overflow:hidden;border:1px solid var(--line)}
+.avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.avatar.big{width:72px;height:72px;font-size:24px}
+.zoom{position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;gap:6px}
+.hint{position:absolute;left:12px;bottom:12px;font-size:13px;color:var(--muted);background:var(--surface);padding:6px 10px;border-radius:8px;border:1px solid var(--line);max-width:60%}
+
+/* list */
+.list{flex:1;overflow:auto;padding:0 16px 24px}
+.row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:10px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;margin-bottom:6px}
+.row:hover{border-color:var(--accent)}
+.row .who{flex:2;min-width:0} .row .who b{font-weight:600}
+.row .col{flex:1;min-width:0;color:var(--muted);font-size:15px;font-variant-numeric:tabular-nums}
+.row .who,.row .col{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:640px){.row .col.place{display:none}}
+.empty{margin:auto;text-align:center;max-width:460px;padding:32px 16px;display:flex;flex-direction:column;gap:14px;align-items:center}
+.empty h2{font-size:30px}
+.empty p{margin:0;color:var(--muted)}
+
+/* backup tab */
+.page{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:16px;max-width:760px;width:100%;margin:0 auto}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.panel h2{font-size:21px}
+.panel p{margin:0;color:var(--muted);font-size:16px;max-width:65ch}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+
+/* sheet */
+#scrim{position:fixed;inset:0;background:rgba(10,16,13,.45);z-index:20;display:none}
+#scrim.on{display:block}
+#sheet{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--paper);z-index:21;display:none;flex-direction:column;box-shadow:var(--shadow);border-left:1px solid var(--line)}
+#sheet.on{display:flex}
+.sheet-head{display:flex;gap:12px;align-items:center;padding:14px 16px;background:var(--surface);border-bottom:1px solid var(--line)}
+.sheet-head h2{font-size:22px;flex:1;min-width:0;overflow-wrap:anywhere}
+.sheet-head .sub{font-family:var(--body);font-weight:400;font-size:14px;color:var(--muted);display:block}
+.sheet-body{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+.sec{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.sec h3{font-size:18px;display:flex;align-items:center;gap:8px}
+.sec h3 .btn{margin-left:auto}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:480px){.grid2{grid-template-columns:1fr}}
+.dategrid{display:grid;grid-template-columns:1.25fr .7fr 1.3fr 1fr;gap:6px}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{flex:1;min-height:44px;border:0;background:var(--surface);border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.chip{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:6px 6px 6px 8px;background:var(--paper)}
+.chip .go{flex:1;min-width:0;text-align:left;border:0;background:transparent;min-height:40px;display:flex;align-items:center;gap:10px;padding:0}
+.chip .go span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip .go small{color:var(--muted);font-variant-numeric:tabular-nums}
+.none{color:var(--muted);font-size:15px;margin:0}
+.union{border:1px solid var(--line);border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:8px}
+.union .chip{border:0;padding:0;background:transparent}
+.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+.photos button{aspect-ratio:1;border:1px solid var(--line);border-radius:10px;padding:0;overflow:hidden;background:var(--paper);position:relative}
+.photos img{width:100%;height:100%;object-fit:cover;display:block}
+.photos .star{position:absolute;left:4px;top:4px;background:var(--accent);color:var(--accent-ink);font-size:11px;padding:1px 6px;border-radius:6px}
+
+/* modal */
+#modal{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(10,16,13,.55)}
+#modal.on{display:flex}
+.dialog{background:var(--surface);border-radius:16px;border:1px solid var(--line);box-shadow:var(--shadow);width:min(520px,100%);max-height:92%;display:flex;flex-direction:column;gap:12px;padding:18px;overflow:auto}
+.dialog h2{font-size:21px}
+.dialog p{margin:0;color:var(--muted)}
+.dialog img.full{max-width:100%;max-height:55vh;object-fit:contain;border-radius:10px;align-self:center}
+.pick{max-height:240px;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.sep{font-size:14px;color:var(--muted);display:flex;align-items:center;gap:10px}
+.sep::before,.sep::after{content:"";flex:1;height:1px;background:var(--line)}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:10px;z-index:50;display:none;max-width:90%;font-size:15px}
+#toast.on{display:block}
+@media (prefers-reduced-motion:no-preference){#world.anim{transition:transform .25s ease}}
+
+.steps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:8px;max-width:65ch}
+#btn-end{white-space:nowrap}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Arbre de famille</h1>
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="arbre" id="tab-arbre">Arbre</button>
+    <button role="tab" data-tab="personnes" id="tab-personnes">Personnes</button>
+    <button role="tab" data-tab="sauvegarde" id="tab-sauvegarde">Sauvegarde</button>
+  </nav>
+  <span style="flex:1"></span>
+  <div class="status" id="status"><span class="dot"></span><span id="status-txt">Chargement…</span></div>
+  <button class="btn" id="btn-end">Terminer la session</button>
+</header>
+<div id="banners"></div>
+<main id="main"></main>
+<div id="scrim"></div>
+<aside id="sheet" aria-label="Fiche de la personne"></aside>
+<div id="modal"></div>
+<div id="toast" role="status"></div>
+<input type="file" id="file-import" accept=".json,.ged,.txt,application/json,text/plain" hidden>
+<input type="file" id="file-photo" accept="image/*" hidden>
+<script>
+"use strict";
+/* ===== PURE (dates, GEDCOM) ===== */
+const MOIS=["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
+const GM=["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+function hasDate(d){return !!(d&&(d.y||d.m||d.d||d.t))}
+function fmtDate(d){
+  if(!hasDate(d))return "";
+  if(!d.y&&!d.m&&d.t)return d.t;
+  const q={abt:"vers ",bef:"avant ",aft:"après "}[d.q]||"";
+  const parts=[];
+  if(d.d&&d.m)parts.push(d.d===1?"1er":String(d.d));
+  if(d.m)parts.push(MOIS[d.m-1]);
+  if(d.y)parts.push(String(d.y));
+  return q+parts.join(" ");
+}
+function dateKey(d){return d&&d.y?d.y*10000+(d.m||0)*100+(d.d||0):null}
+function gedDate(d){
+  if(!hasDate(d))return "";
+  if(!d.y&&!d.m&&d.t)return d.t;
+  let s={abt:"ABT ",bef:"BEF ",aft:"AFT "}[d.q]||"";
+  if(d.d&&d.m)s+=d.d+" ";
+  if(d.m)s+=GM[d.m-1]+" ";
+  if(d.y)s+=d.y;
+  return s.trim();
+}
+function parseGedDate(raw){
+  if(!raw)return null;
+  let s=raw.trim().toUpperCase(),q="";
+  let m=s.match(/^(?:BET|FROM)\s+(.+?)\s+(?:AND|TO)\s+.+$/);
+  if(m){s=m[1];q="abt"}
+  m=s.match(/^(ABT|CAL|EST|BEF|AFT|FROM|TO)\.?\s+(.+)$/);
+  if(m){q={ABT:"abt",CAL:"abt",EST:"abt",BEF:"bef",AFT:"aft",FROM:"aft",TO:"bef"}[m[1]];s=m[2]}
+  m=s.match(/^(?:(\d{1,2})\s+)?(?:([A-Z]{3})[A-Z]*\.?\s+)?(\d{3,4})$/);
+  if(!m)return {t:raw.trim()};
+  const d={y:+m[3]};
+  if(m[2]){const i=GM.indexOf(m[2]);if(i<0)return {t:raw.trim()};d.m=i+1;if(m[1])d.d=+m[1]}
+  if(q)d.q=q;
+  return d;
+}
+function gedExport(people,unions){
+  const live=people.filter(p=>!p.deleted),byId=new Map(live.map(p=>[p.id,p]));
+  const iid=new Map(live.map((p,i)=>[p.id,"@I"+(i+1)+"@"]));
+  const fams=new Map(),key=(a,b)=>[a,b].filter(Boolean).sort().join("+");
+  for(const u of unions){if(byId.has(u.a)&&byId.has(u.b))fams.set(key(u.a,u.b),{a:u.a,b:u.b,u,ch:[]})}
+  for(const p of live){
+    const pr=(p.parents||[]).filter(x=>byId.has(x)).slice(0,2);
+    if(!pr.length)continue;
+    const k=key(pr[0],pr[1]);
+    if(!fams.has(k))fams.set(k,{a:pr[0],b:pr[1],ch:[]});
+    fams.get(k).ch.push(p.id);
+  }
+  const fl=[...fams.values()];fl.forEach((f,i)=>{f.id="@F"+(i+1)+"@";
+    const A=byId.get(f.a),B=f.b&&byId.get(f.b);
+    if(B&&(A.sex==="F"&&B.sex!=="F"||B.sex==="M"&&A.sex!=="M")){const t=f.a;f.a=f.b;f.b=t}
+  });
+  const out=["0 HEAD","1 SOUR ArbreDeFamille","1 GEDC","2 VERS 5.5.1","2 FORM LINEAGE-LINKED","1 CHAR UTF-8","1 LANG French"];
+  const clean=s=>String(s||"").replace(/[\r\n]+/g," ").trim();
+  const ev=(tag,d,pl,force)=>{
+    if(!hasDate(d)&&!pl&&!force)return;
+    out.push("1 "+tag+(force&&!hasDate(d)&&!pl?" Y":""));
+    if(hasDate(d))out.push("2 DATE "+gedDate(d));
+    if(pl)out.push("2 PLAC "+clean(pl));
+  };
+  for(const p of live){
+    out.push("0 "+iid.get(p.id)+" INDI");
+    const gv=clean([p.given,p.otherGiven].filter(Boolean).join(" "));
+    out.push("1 NAME "+gv+" /"+clean(p.surname)+"/");
+    if(gv)out.push("2 GIVN "+gv);
+    if(p.surname)out.push("2 SURN "+clean(p.surname));
+    if(p.sex==="M"||p.sex==="F")out.push("1 SEX "+p.sex);
+    ev("BIRT",p.birth,p.birthPlace,false);
+    ev("DEAT",p.death,p.deathPlace,!!p.deceased);
+    if(p.occupation)out.push("1 OCCU "+clean(p.occupation));
+    if(p.notes){const ls=String(p.notes).split(/\r?\n/);out.push("1 NOTE "+ls[0]);for(let i=1;i<ls.length;i++)out.push("2 CONT "+ls[i])}
+    for(const f of fl){if(f.ch.includes(p.id))out.push("1 FAMC "+f.id)}
+    for(const f of fl){if(f.a===p.id||f.b===p.id)out.push("1 FAMS "+f.id)}
+  }
+  for(const f of fl){
+    out.push("0 "+f.id+" FAM");
+    const A=byId.get(f.a),B=f.b&&byId.get(f.b);
+    if(B){out.push("1 HUSB "+iid.get(f.a));out.push("1 WIFE "+iid.get(f.b))}
+    else out.push("1 "+(A.sex==="F"?"WIFE":"HUSB")+" "+iid.get(f.a));
+    if(f.u&&(hasDate(f.u.date)||f.u.place)){out.push("1 MARR");if(hasDate(f.u.date))out.push("2 DATE "+gedDate(f.u.date));if(f.u.place)out.push("2 PLAC "+clean(f.u.place))}
+    if(f.u&&(f.u.divorced||hasDate(f.u.divorce)||f.u.divorcePlace)){out.push("1 DIV"+(!hasDate(f.u.divorce)&&!f.u.divorcePlace?" Y":""));if(hasDate(f.u.divorce))out.push("2 DATE "+gedDate(f.u.divorce));if(f.u.divorcePlace)out.push("2 PLAC "+clean(f.u.divorcePlace))}
+    for(const c of f.ch)out.push("1 CHIL "+iid.get(c));
+  }
+  out.push("0 TRLR");
+  return out.join("\r\n")+"\r\n";
+}
+function gedParse(text,newId){
+  const recs=[],stack=[];
+  for(const line of text.replace(/^﻿/,"").split(/\r\n|\r|\n/)){
+    const m=line.match(/^\s*(\d+)\s+(?:(@[^@]+@)\s+)?(\S+)(?: (.*))?$/);
+    if(!m)continue;
+    const lvl=+m[1],node={tag:m[3].toUpperCase(),xref:m[2]||"",val:m[4]||"",kids:[]};
+    if(lvl===0){recs.push(node);stack.length=0;stack[0]=node;continue}
+    const parent=stack[lvl-1];if(!parent)continue;
+    if(node.tag==="CONT"){parent.val+="\n"+node.val;continue}
+    if(node.tag==="CONC"){parent.val+=node.val;continue}
+    parent.kids.push(node);stack[lvl]=node;stack.length=lvl+1;
+  }
+  const kid=(n,t)=>n.kids.find(k=>k.tag===t),kids=(n,t)=>n.kids.filter(k=>k.tag===t);
+  const notes=new Map(recs.filter(r=>r.tag==="NOTE"&&r.xref).map(r=>[r.xref,r.val]));
+  const map=new Map(),people=[],unions=[];
+  for(const r of recs){
+    if(r.tag!=="INDI")continue;
+    const p={id:newId(),given:"",surname:"",sex:"",parents:[]};
+    const nm=kid(r,"NAME");
+    if(nm){
+      const g=kid(nm,"GIVN"),s=kid(nm,"SURN"),mm=nm.val.match(/^([^/]*)\/([^/]*)\//);
+      p.given=(g?g.val:mm?mm[1]:nm.val).trim();
+      const gp=p.given.split(/\s+/);if(gp.length>1){p.given=gp[0];p.otherGiven=gp.slice(1).join(" ")}p.surname=(s?s.val:mm?mm[2]:"").trim();
+    }
+    const sx=kid(r,"SEX");if(sx&&/^[MF]/i.test(sx.val))p.sex=sx.val[0].toUpperCase();
+    const b=kid(r,"BIRT")||kid(r,"BAPM")||kid(r,"CHR");
+    if(b){const d=kid(b,"DATE"),pl=kid(b,"PLAC");if(d){const x=parseGedDate(d.val);if(x)p.birth=x}if(pl)p.birthPlace=pl.val}
+    const de=kid(r,"DEAT")||kid(r,"BURI");
+    if(de){p.deceased=true;const d=kid(de,"DATE"),pl=kid(de,"PLAC");if(d){const x=parseGedDate(d.val);if(x)p.death=x}if(pl)p.deathPlace=pl.val}
+    const oc=kid(r,"OCCU");if(oc)p.occupation=oc.val;
+    const nt=kids(r,"NOTE").map(n=>/^@[^@]+@$/.test(n.val.trim())?(notes.get(n.val.trim())||""):n.val).filter(Boolean);
+    if(nt.length)p.notes=nt.join("\n\n");
+    map.set(r.xref,p);people.push(p);
+  }
+  for(const r of recs){
+    if(r.tag!=="FAM")continue;
+    const h=map.get((kid(r,"HUSB")||{}).val),w=map.get((kid(r,"WIFE")||{}).val);
+    const pr=[h,w].filter(Boolean).map(x=>x.id);
+    for(const c of kids(r,"CHIL")){const ch=map.get(c.val);if(ch)for(const x of pr)if(ch.parents.length<2&&!ch.parents.includes(x))ch.parents.push(x)}
+    if(h&&w){const u={id:newId(),a:h.id,b:w.id},mr=kid(r,"MARR");
+      if(mr){const d=kid(mr,"DATE"),pl=kid(mr,"PLAC");if(d){const x=parseGedDate(d.val);if(x)u.date=x}if(pl)u.place=pl.val}
+      const dv=kid(r,"DIV");
+      if(dv){u.divorced=true;const d=kid(dv,"DATE"),pl=kid(dv,"PLAC");if(d){const x=parseGedDate(d.val);if(x)u.divorce=x}if(pl)u.divorcePlace=pl.val}
+      unions.push(u)}
+  }
+  return {people,unions};
+}
+/* ===== END PURE ===== */
+
+const LS="arbre.v2.";
+const S={people:{},unions:{},meta:{},tab:"arbre",focus:null,sheetId:null,search:"",sort:"surname",dir:1,up:4,down:3,view:{x:0,y:0,k:1},storeErr:false,asked:false};
+let L={changed:{},lastExportAt:0,lastImportAt:0};
+let idb=null;
+
+const $=id=>document.getElementById(id);
+function h(tag,props,...kids){
+  const e=document.createElement(tag);let val;
+  for(const k in props||{}){const v=props[k];
+    if(k==="class")e.className=v;else if(k==="value")val=v;
+    else if(k.startsWith("on"))e.addEventListener(k.slice(2),v);
+    else if(v===true)e.setAttribute(k,"");else if(v!==false&&v!=null)e.setAttribute(k,v)}
+  for(const c of kids.flat(Infinity))if(c!=null&&c!==false)e.append(c.nodeType?c:document.createTextNode(String(c)));
+  if(val!==undefined)e.value=val??"";
+  return e;
+}
+const newId=()=>"x"+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+let toastT;function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("on");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("on"),4000)}
+const frDate=(ts,time)=>new Date(ts).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})+(time?" à "+new Date(ts).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}):"");
+
+/* ---------- data access ---------- */
+const live=p=>p&&!p.deleted&&!p.purged;
+const P=id=>{const p=S.people[id];return live(p)?p:null};
+const allPeople=()=>Object.values(S.people).filter(live);
+const allUnions=()=>Object.values(S.unions).filter(u=>!u.purged);
+function fullName(p){if(!p)return "?";const n=[p.given,(p.surname||"").toUpperCase()].filter(Boolean).join(" ");return n||"Sans nom"}
+function longName(p){const n=[p.given,p.otherGiven,(p.surname||"").toUpperCase()].filter(Boolean).join(" ");return n||"Sans nom"}
+function initials(p){return ((p.given||"?")[0]+((p.surname||"")[0]||"")).toUpperCase()}
+function lifespan(p){
+  const b=p.birth&&p.birth.y,d=p.death&&p.death.y;
+  if(b&&d)return b+" – "+d;if(b)return (p.deceased?"° ":"né"+(p.sex==="F"?"e":"")+" en ")+b;if(d)return "† "+d;return p.deceased?"décédé"+(p.sex==="F"?"e":""):"";
+}
+const byBirth=(a,b)=>(dateKey(a.birth)??9e9)-(dateKey(b.birth)??9e9);
+const parentsOf=id=>((P(id)||{}).parents||[]).map(P).filter(Boolean).sort((a,b)=>(a.sex==="M"?0:a.sex==="F"?2:1)-(b.sex==="M"?0:b.sex==="F"?2:1));
+const childrenOf=id=>allPeople().filter(p=>(p.parents||[]).includes(id)).sort(byBirth);
+const unionsOf=id=>allUnions().filter(u=>(u.a===id&&P(u.b))||(u.b===id&&P(u.a)));
+function partnersOf(id){
+  const set=new Set(unionsOf(id).map(u=>u.a===id?u.b:u.a));
+  for(const c of childrenOf(id))for(const x of c.parents||[])if(x!==id&&P(x))set.add(x);
+  return [...set];
+}
+function ancestors(id,acc=new Set()){for(const p of parentsOf(id)){if(!acc.has(p.id)){acc.add(p.id);ancestors(p.id,acc)}}return acc}
+function descendants(id,acc=new Set()){for(const c of childrenOf(id)){if(!acc.has(c.id)){acc.add(c.id);descendants(c.id,acc)}}return acc}
+
+/* ---------- storage on this device ---------- */
+function idbOpen(){return new Promise((res,rej)=>{
+  const r=indexedDB.open("arbre-de-famille",1);
+  r.onupgradeneeded=()=>{const d=r.result;d.createObjectStore("people",{keyPath:"id"});d.createObjectStore("unions",{keyPath:"id"});
+    d.createObjectStore("media",{keyPath:"id"}).createIndex("personId","personId");d.createObjectStore("meta")};
+  r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);r.onblocked=()=>rej(new Error("blocked"))})}
+function tx(store,mode,fn){return new Promise((res,rej)=>{
+  if(!idb){rej(new Error("no-idb"));return}
+  const t=idb.transaction(store,mode);const rq=fn(t.objectStore(store));
+  t.oncomplete=()=>res(rq?rq.result:undefined);t.onerror=t.onabort=()=>rej(t.error)})}
+function put(store,obj,key){
+  saveCache();
+  if(!idb)return Promise.resolve();
+  return tx(store,"readwrite",s=>key?s.put(obj,key):s.put(obj)).catch(()=>{S.storeErr=true;renderStatus();renderBanners()});
+}
+const mediaFor=id=>tx("media","readonly",s=>s.index("personId").getAll(id)).then(a=>a.filter(m=>!m.purged));
+const allMedia=()=>idb?tx("media","readonly",s=>s.getAll()):Promise.resolve([]);
+let lsT;
+function saveCache(){clearTimeout(lsT);lsT=setTimeout(()=>{
+  const data={people:S.people,unions:S.unions,meta:S.meta};
+  try{localStorage.setItem(LS+"cache",JSON.stringify(data))}
+  catch(e){try{const slim={};for(const k in S.people){slim[k]={...S.people[k]};delete slim[k].thumb}
+    localStorage.setItem(LS+"cache",JSON.stringify({...data,people:slim}))}catch(e2){}}
+},300)}
+function saveL(){try{localStorage.setItem(LS+"local",JSON.stringify(L))}catch(e){}}
+function setPref(k,v){try{localStorage.setItem(LS+k,v)}catch(e){}}
+function mark(path){L.changed[path]=1;saveL();renderStatus()}
+const index=arr=>Object.fromEntries(arr.map(x=>[x.id,x]));
+
+/* ---------- mutations ---------- */
+let renderT;
+function patchPerson(id,patch,typing){
+  const old=S.people[id]||{id,parents:[]};
+  const np={...old,...patch,id,updatedAt:Date.now()};
+  for(const k in patch)if(patch[k]===undefined||patch[k]===null||patch[k]==="")delete np[k];
+  S.people[id]=np;put("people",np);mark("people/"+id);
+  clearTimeout(renderT);if(typing)renderT=setTimeout(renderAll,250);else renderAll();
+}
+function createPerson(data){const id=newId(),now=Date.now();S.people[id]={id,parents:[],createdAt:now,updatedAt:now,...data};put("people",S.people[id]);mark("people/"+id);
+  if(!P(S.meta.rootId))setRoot(id);if(!S.focus)setFocus(id,true);renderAll();return id}
+function setRoot(id){S.meta={...S.meta,rootId:id,rootAt:Date.now()};put("meta",S.meta,"app");mark("meta/app")}
+function saveUnion(u,quiet){u.updatedAt=Date.now();S.unions[u.id]=u;put("unions",u);mark("unions/"+u.id);if(!quiet)renderAll()}
+function deleteUnion(id){saveUnion({id,purged:true})}
+function addParent(childId,parentId){const c=P(childId);if(!c)return;const pr=(c.parents||[]).filter(x=>P(x));
+  if(pr.includes(parentId)||pr.length>=2)return;patchPerson(childId,{parents:[...pr,parentId]})}
+function removeParent(childId,parentId){const c=P(childId);patchPerson(childId,{parents:(c.parents||[]).filter(x=>x!==parentId)})}
+async function purgePerson(id){
+  const now=Date.now();
+  for(const c of Object.values(S.people))if(!c.purged&&(c.parents||[]).includes(id)){S.people[c.id]={...c,parents:c.parents.filter(x=>x!==id),updatedAt:now};put("people",S.people[c.id]);mark("people/"+c.id)}
+  for(const u of allUnions())if(u.a===id||u.b===id)saveUnion({id:u.id,purged:true},true);
+  try{for(const m of await mediaFor(id)){await put("media",{id:m.id,personId:id,purged:true,updatedAt:now});mark("media/"+m.id)}}catch(e){}
+  S.people[id]={id,purged:true,updatedAt:now};put("people",S.people[id]);mark("people/"+id);renderAll();
+}
+
+/* ---------- modal helpers ---------- */
+let modalResolve=null;
+function openModal(content,onClose){const m=$("modal");m.replaceChildren(h("div",{class:"dialog",role:"dialog","aria-modal":"true"},content));m.classList.add("on");modalResolve=onClose||null;
+  const f=m.querySelector("input,button");if(f)f.focus()}
+function closeModal(v){const m=$("modal");m.classList.remove("on");m.replaceChildren();const r=modalResolve;modalResolve=null;if(r)r(v)}
+$("modal").addEventListener("click",e=>{if(e.target===$("modal"))closeModal()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){if($("modal").classList.contains("on"))closeModal();else if(S.sheetId)closeSheet()}});
+function ask(title,text,choices){return new Promise(res=>{
+  openModal([h("h2",{},title),text&&[].concat(text).map(t=>h("p",{},t)),h("div",{class:"actions"},choices.map(c=>h("button",{class:"btn "+(c.cls||""),onclick:()=>closeModal(c.value)},c.label)))],res)})}
+const confirmBox=(title,text,ok,danger)=>ask(title,text,[{label:"Annuler",value:false},{label:ok,value:true,cls:danger?"danger":"primary"}]);
+
+function avatar(p,big){const a=h("span",{class:"avatar"+(big?" big":"")});if(p&&p.thumb)a.append(h("img",{src:p.thumb,alt:""}));else a.textContent=p?initials(p):"?";return a}
+function personRow(p,onclick){return h("button",{class:"row",onclick},avatar(p),h("span",{class:"who"},h("b",{},fullName(p))),h("span",{class:"col"},lifespan(p)))}
+
+function pickPerson({title,exclude=[],surname="",sex=""}){return new Promise(res=>{
+  const ex=new Set(exclude);
+  const list=h("div",{class:"pick"});
+  const search=h("input",{type:"search",id:"pick-search",placeholder:"Chercher une personne déjà saisie…","aria-label":"Chercher",oninput:fill});
+  function fill(){const q=search.value.trim().toLowerCase();
+    const items=allPeople().filter(p=>!ex.has(p.id)&&(!q||fullName(p).toLowerCase().includes(q))).sort((a,b)=>fullName(a).localeCompare(fullName(b),"fr")).slice(0,40);
+    list.replaceChildren(...(items.length?items.map(p=>personRow(p,()=>closeModal(p.id))):[h("p",{class:"none"},"Aucune personne trouvée.")]))}
+  const g=h("input",{type:"text",id:"pick-given",placeholder:"Premier prénom"}),s=h("input",{type:"text",id:"pick-surname",placeholder:"Nom de naissance",value:surname});
+  const sx=h("select",{id:"pick-sex",value:sex},h("option",{value:""},"Sexe inconnu"),h("option",{value:"M"},"Homme"),h("option",{value:"F"},"Femme"));
+  const create=()=>{if(!g.value.trim()&&!s.value.trim()){toast("Indiquez au moins un prénom ou un nom.");return}
+    closeModal(createPerson({given:g.value.trim(),surname:s.value.trim(),sex:sx.value}))};
+  fill();
+  const hasPeople=allPeople().some(p=>!ex.has(p.id));
+  openModal([h("h2",{},title),
+    hasPeople&&[search,list,h("div",{class:"sep"},"ou créer une nouvelle personne")],
+    h("div",{class:"grid2"},g,s),sx,
+    h("div",{class:"actions"},h("button",{class:"btn",onclick:()=>closeModal()},"Annuler"),h("button",{class:"btn primary",onclick:create},"Créer"))],res);
+  if(!hasPeople)g.focus();
+})}
+
+/* ---------- status & banners ---------- */
+function renderStatus(){
+  const el=$("status"),n=Object.keys(L.changed).length;
+  if(S.storeErr){el.className="status bad";$("status-txt").textContent="Enregistrement impossible sur cet appareil"}
+  else if(n){el.className="status warn";$("status-txt").textContent=n+(n>1?" modifications":" modification")+" à mettre dans un fichier"}
+  else{el.className="status ok";$("status-txt").textContent="Tout est dans le dernier fichier"}
+  $("btn-end").className="btn "+(n?"primary":"");
+}
+function renderBanners(){
+  const b=$("banners");b.replaceChildren();
+  if(S.storeErr)b.append(h("div",{class:"banner bad"},"Ce navigateur refuse d'enregistrer les données (navigation privée ?). Ne fermez pas la page sans avoir touché « Terminer la session » pour récupérer votre fichier."));
+  if(!S.asked&&S.ready&&allPeople().length)b.append(h("div",{class:"banner"},
+    "Avant de commencer : avez-vous travaillé sur l'autre appareil depuis votre dernière visite ici ? Si oui, chargez d'abord son fichier.",
+    h("button",{class:"btn small primary",onclick:()=>$("file-import").click()},"Charger un fichier"),
+    h("button",{class:"btn small",onclick:()=>{S.asked=true;renderBanners()}},"Non, je continue")));
+}
+
+/* ---------- tabs ---------- */
+function showTab(tab){
+  S.tab=tab;document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===tab));
+  try{history.replaceState(null,"","#"+tab)}catch(e){}
+  const m=$("main");m.replaceChildren();
+  if(tab==="arbre")buildTree(m);else if(tab==="personnes")buildList(m);else buildBackup(m);
+  renderAll();
+}
+document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
+function renderAll(){renderStatus();renderBanners();
+  if(S.tab==="arbre")drawTree();else if(S.tab==="personnes")drawList();else drawBackup();
+  if(S.sheetId)drawRelations();}
+function emptyState(){return h("div",{class:"empty"},h("h2",{},"Commencez votre arbre"),
+  h("p",{},"Créez une première personne, vous-même par exemple. Vous ajouterez ensuite ses parents, son conjoint et ses enfants depuis sa fiche."),
+  h("div",{class:"actions"},h("button",{class:"btn primary",onclick:addFirst},"Créer la première personne"),h("button",{class:"btn",onclick:()=>$("file-import").click()},"Reprendre depuis un fichier")),
+  h("p",{},"Le fichier peut venir de votre autre appareil, ou être un .ged d'un autre logiciel."))}
+async function addFirst(){const id=await pickPerson({title:"Nouvelle personne",exclude:Object.keys(S.people)});if(id)openSheet(id)}
+
+/* ---------- tree ---------- */
+const CW=176,CH=64,GX=22,PG=14,GY=58;
+function buildTree(m){
+  const gens=(id,val,max)=>h("select",{id,value:String(val),onchange:e=>{S[id==="sel-up"?"up":"down"]=+e.target.value;drawTree()}},
+    Array.from({length:max},(_,i)=>h("option",{value:String(i+1)},String(i+1))));
+  m.append(h("div",{class:"toolbar",id:"tree-bar"},
+    h("button",{class:"btn",id:"btn-open-focus",onclick:()=>S.focus&&openSheet(S.focus)},"Ouvrir la fiche"),
+    h("span",{class:"lbl"},"Ancêtres"),gens("sel-up",S.up,7),h("span",{class:"lbl"},"Descendants"),gens("sel-down",S.down,6),
+    h("button",{class:"btn",onclick:()=>{const r=S.meta.rootId;if(P(r))setFocus(r)}},"Revenir au départ"),
+    h("button",{class:"btn",onclick:addFirst},"+ Personne")),
+   h("div",{id:"viewport"},h("div",{id:"world"}),
+    h("div",{class:"hint"},"Touchez une personne pour centrer l'arbre sur elle. Touchez-la une seconde fois pour ouvrir sa fiche."),
+    h("div",{class:"zoom"},h("button",{class:"btn icon","aria-label":"Zoomer",onclick:()=>zoomBy(1.25)},"+"),h("button",{class:"btn icon","aria-label":"Dézoomer",onclick:()=>zoomBy(0.8)},"−"),h("button",{class:"btn icon","aria-label":"Recentrer",onclick:()=>centerOn(true)},"◎"))));
+  bindPanZoom($("viewport"));S.needCenter=true;
+}
+function setFocus(id,quiet){S.focus=id;setPref("focus",id);S.needCenter=true;if(!quiet&&S.tab==="arbre")drawTree(true)}
+function layout(focus){
+  const cards=[],links=[];
+  const card=(id,x,lvl)=>cards.push({id,x,y:lvl*(CH+GY)});
+  function build(id,depth,seen){
+    const partners=partnersOf(id);
+    const kids=depth<S.down?childrenOf(id).filter(c=>!seen.has(c.id)):[];
+    kids.forEach(c=>seen.add(c.id));
+    const ch=kids.map(c=>build(c.id,depth+1,seen));
+    const bw=CW+partners.length*(CW+PG),cw=ch.reduce((s,c)=>s+c.w,0)+GX*Math.max(0,ch.length-1);
+    return {id,partners,ch,bw,cw,w:Math.max(bw,cw)};
+  }
+  function place(n,left,lvl){
+    const x0=left+(n.w-n.bw)/2,y=lvl*(CH+GY);n.x0=x0;
+    card(n.id,x0,lvl);
+    n.partners.forEach((pid,i)=>{const px=x0+(i+1)*(CW+PG);card(pid,px,lvl);links.push(`M${px-PG},${y+CH/2}H${px}`)});
+    let cx=left+(n.w-n.cw)/2;
+    for(const c of n.ch){
+      place(c,cx,lvl+1);
+      const child=P(c.id),pi=n.partners.findIndex(pid=>(child.parents||[]).includes(pid));
+      const sx=pi>=0?x0+(pi+1)*(CW+PG)-PG/2:x0+CW/2,sy=pi>=0?y+CH/2:y+CH;
+      const tx2=c.x0+CW/2,ty=(lvl+1)*(CH+GY),mid=y+CH+GY/2;
+      links.push(`M${sx},${sy}V${mid}H${tx2}V${ty}`);
+      cx+=c.w+GX;
+    }
+  }
+  const root=build(focus,0,new Set([focus]));place(root,0,0);
+  const fx=root.x0+CW/2;
+  function anc(id,depth,seen){
+    const ps=depth<S.up?parentsOf(id).filter(p=>!seen.has(p.id)):[];ps.forEach(p=>seen.add(p.id));
+    const pr=ps.map(p=>anc(p.id,depth+1,seen));
+    const pw=pr.reduce((s,c)=>s+c.w,0)+GX*Math.max(0,pr.length-1);
+    return {id,pr,pw,w:Math.max(CW,pw)};
+  }
+  function placeA(n,left,lvl,isRoot){
+    n.cx=left+n.w/2;if(!isRoot)card(n.id,n.cx-CW/2,lvl);
+    let x=left+(n.w-n.pw)/2;
+    for(const p of n.pr){placeA(p,x,lvl-1,false);x+=p.w+GX}
+  }
+  function linkA(n,lvl,dx){const y=lvl*(CH+GY);
+    for(const p of n.pr){links.push(`M${n.cx+dx},${y}V${y-GY/2}H${p.cx+dx}V${y-GY}`);linkA(p,lvl-1,dx)}}
+  const ar=anc(focus,0,new Set([focus]));
+  const before=cards.length;placeA(ar,0,0,true);const dx=fx-ar.cx;
+  for(let i=before;i<cards.length;i++)cards[i].x+=dx;
+  linkA(ar,0,dx);
+  return {cards,links,fx:fx-CW/2,fy:0};
+}
+let lastLayout=null;
+function drawTree(animate){
+  const vp=$("viewport");if(!vp)return;
+  const world=$("world"),bar=$("tree-bar"),people=allPeople();
+  let empty=$("tree-empty");
+  if(!people.length){world.replaceChildren();bar.style.display="none";vp.style.display="none";
+    if(!empty)$("main").append(Object.assign(emptyState(),{id:"tree-empty"}));return}
+  if(empty)empty.remove();bar.style.display="";vp.style.display="";
+  if(!P(S.focus))S.focus=P(S.meta.rootId)?S.meta.rootId:people.sort(byBirth)[0].id;
+  const Lo=layout(S.focus);lastLayout=Lo;
+  const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");svg.setAttribute("width","1");svg.setAttribute("height","1");
+  for(const d of Lo.links){const p=document.createElementNS("http://www.w3.org/2000/svg","path");p.setAttribute("d",d);svg.append(p)}
+  const nodes=[svg];
+  for(const c of Lo.cards){const p=P(c.id);if(!p)continue;
+    nodes.push(h("button",{class:"card "+(p.sex||"")+(c.id===S.focus?" focus":""),style:`left:${c.x}px;top:${c.y}px`,"data-id":c.id,
+      "aria-label":fullName(p)},avatar(p),h("span",{class:"txt"},h("span",{class:"n1"},p.given||"—"),h("span",{class:"n2"},(p.surname||"").toUpperCase()||"—"),h("span",{class:"n3"},lifespan(p)))))}
+  world.replaceChildren(...nodes);
+  $("btn-open-focus").textContent="Ouvrir la fiche de "+(P(S.focus).given||fullName(P(S.focus)));
+  if(S.needCenter){S.needCenter=false;centerOn(animate)}
+}
+function applyView(anim){const w=$("world");if(!w)return;w.classList.toggle("anim",!!anim);w.style.transform=`translate(${S.view.x}px,${S.view.y}px) scale(${S.view.k})`}
+function centerOn(anim){const vp=$("viewport");if(!vp||!lastLayout)return;const r=vp.getBoundingClientRect();
+  if(!S.view.init){S.view.k=r.width<700?0.8:1;S.view.init=true}
+  S.view.x=r.width/2-(lastLayout.fx+CW/2)*S.view.k;S.view.y=r.height/2-(lastLayout.fy+CH/2)*S.view.k;applyView(anim)}
+function zoomAt(f,cx,cy){const k=Math.min(2.5,Math.max(0.2,S.view.k*f)),r=k/S.view.k;S.view.x=cx-(cx-S.view.x)*r;S.view.y=cy-(cy-S.view.y)*r;S.view.k=k;applyView()}
+function zoomBy(f){const r=$("viewport").getBoundingClientRect();zoomAt(f,r.width/2,r.height/2)}
+function bindPanZoom(vp){
+  const pts=new Map();let moved=0,pinch=0,captured=false;
+  vp.addEventListener("pointerdown",e=>{if(e.target.closest(".zoom"))return;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pts.size===1){moved=0;captured=false}pinch=0});
+  vp.addEventListener("pointermove",e=>{const p=pts.get(e.pointerId);if(!p)return;
+    const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
+    if(pts.size===1){moved+=Math.abs(dx)+Math.abs(dy);if(moved>8){if(!captured){captured=true;try{vp.setPointerCapture(e.pointerId)}catch(_){}vp.classList.add("drag")}S.view.x+=dx;S.view.y+=dy;applyView()}}
+    else if(pts.size===2){moved=99;const [a,b]=[...pts.values()],d=Math.hypot(a.x-b.x,a.y-b.y),r=vp.getBoundingClientRect();
+      if(pinch)zoomAt(d/pinch,(a.x+b.x)/2-r.left,(a.y+b.y)/2-r.top);pinch=d}});
+  const up=e=>{pts.delete(e.pointerId);pinch=0;vp.classList.remove("drag")};
+  vp.addEventListener("pointerup",up);vp.addEventListener("pointercancel",up);
+  vp.addEventListener("wheel",e=>{e.preventDefault();const r=vp.getBoundingClientRect();zoomAt(e.deltaY<0?1.12:0.89,e.clientX-r.left,e.clientY-r.top)},{passive:false});
+  vp.addEventListener("click",e=>{const c=e.target.closest(".card");if(!c)return;if(moved>8){moved=0;return}
+    const id=c.dataset.id;if(id===S.focus)openSheet(id);else setFocus(id)});
+}
+
+/* ---------- list ---------- */
+function buildList(m){
+  m.append(h("div",{class:"toolbar"},
+    h("input",{type:"search",class:"grow",id:"list-search",placeholder:"Chercher un nom, un prénom, un lieu…","aria-label":"Chercher",value:S.search,oninput:e=>{S.search=e.target.value;drawList()}}),
+    h("span",{class:"lbl"},"Trier par"),
+    h("select",{id:"list-sort",value:S.sort,onchange:e=>{S.sort=e.target.value;drawList()}},
+      h("option",{value:"surname"},"Nom"),h("option",{value:"given"},"Prénom"),h("option",{value:"birth"},"Date de naissance"),h("option",{value:"death"},"Date de décès"),h("option",{value:"updated"},"Dernière modification")),
+    h("select",{id:"list-dir","aria-label":"Ordre du tri",value:String(S.dir),onchange:e=>{S.dir=+e.target.value;drawList()}},
+      h("option",{value:"1"},"Croissant"),h("option",{value:"-1"},"Décroissant")),
+    h("button",{class:"btn primary",onclick:addFirst},"+ Personne")),
+   h("div",{class:"list",id:"list"}));
+}
+function drawList(){
+  const el=$("list");if(!el)return;const q=S.search.trim().toLowerCase();
+  let ps=allPeople();
+  if(!ps.length){el.replaceChildren(emptyState());return}
+  if(q)ps=ps.filter(p=>[p.given,p.otherGiven,p.surname,p.birthPlace,p.deathPlace,p.occupation].join(" ").toLowerCase().includes(q));
+  const txt=v=>(v||"").trim().toLowerCase()||null;
+  const key={surname:p=>txt(p.surname),given:p=>txt(p.given),birth:p=>dateKey(p.birth),death:p=>dateKey(p.death),updated:p=>p.updatedAt||null}[S.sort];
+  const cmpv=(a,b)=>typeof a==="string"?a.localeCompare(b,"fr"):a-b;
+  ps.sort((a,b)=>{const ka=key(a),kb=key(b);
+    if(ka===null||kb===null)return ka===kb?0:ka===null?1:-1; // fiches sans valeur toujours en fin de liste
+    return cmpv(ka,kb)*S.dir||txt(a.given||"")?.localeCompare(txt(b.given||"")||"","fr")||0});
+  el.replaceChildren(h("p",{class:"none",style:"margin:0 0 8px"},ps.length+(ps.length>1?" personnes":" personne")),
+    ...ps.map(p=>h("button",{class:"row",onclick:()=>openSheet(p.id)},avatar(p),
+      h("span",{class:"who"},h("b",{},(p.surname||"").toUpperCase()||"—")," ",p.given||""),
+      h("span",{class:"col"},fmtDate(p.birth)?"° "+fmtDate(p.birth):""),
+      h("span",{class:"col"},fmtDate(p.death)?"† "+fmtDate(p.death):""),
+      h("span",{class:"col place"},p.birthPlace||""))));
+}
+
+/* ---------- sheet ---------- */
+function dateInputs(prefix,d,onChange){
+  d=d||{};
+  const q=h("select",{id:prefix+"-q","aria-label":"Précision",value:d.q||""},h("option",{value:""},"le"),h("option",{value:"abt"},"vers"),h("option",{value:"bef"},"avant"),h("option",{value:"aft"},"après"));
+  const dd=h("input",{type:"number",id:prefix+"-d",min:"1",max:"31",placeholder:"Jour","aria-label":"Jour",inputmode:"numeric",value:d.d||""});
+  const mm=h("select",{id:prefix+"-m","aria-label":"Mois",value:d.m?String(d.m):""},h("option",{value:""},"Mois"),MOIS.map((n,i)=>h("option",{value:String(i+1)},n)));
+  const yy=h("input",{type:"number",id:prefix+"-y",min:"1",max:"2100",placeholder:"Année","aria-label":"Année",inputmode:"numeric",value:d.y||""});
+  const read=()=>{const o={};if(+yy.value)o.y=+yy.value;if(+mm.value)o.m=+mm.value;if(+dd.value&&o.m)o.d=Math.min(31,+dd.value);if(q.value&&(o.y||o.m))o.q=q.value;
+    if(!o.y&&!o.m&&d.t)o.t=d.t;return Object.keys(o).length?o:undefined};
+  const wrap=h("div",{class:"dategrid"},q,dd,mm,yy);
+  wrap.addEventListener("input",()=>onChange(read()));
+  return wrap;
+}
+function field(label,id,input){return h("div",{},h("label",{for:id},label),input)}
+function textInput(id,pid,key,ph){return h("input",{type:"text",id,placeholder:ph||"",value:(P(pid)||{})[key]||"",
+  oninput:e=>patchPerson(pid,{[key]:e.target.value},true),onchange:e=>patchPerson(pid,{[key]:e.target.value.trim()})})}
+function openSheet(id){
+  if(!P(id))return;S.sheetId=id;const p=P(id),sh=$("sheet");
+  const seg=h("div",{class:"seg",role:"group","aria-label":"Sexe"},[["M","Homme"],["F","Femme"],["","Inconnu"]].map(([v,l])=>
+    h("button",{type:"button","aria-pressed":String((p.sex||"")===v),onclick:e=>{patchPerson(id,{sex:v});seg.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(b===e.currentTarget)))}},l)));
+  const dead=h("input",{type:"checkbox",id:"f-deceased",style:"width:22px;height:22px;min-height:0",onchange:e=>{patchPerson(id,{deceased:e.target.checked||undefined});deathBox.style.display=e.target.checked?"":"none"}});
+  dead.checked=!!(p.deceased||hasDate(p.death));
+  const deathBox=h("div",{style:"display:flex;flex-direction:column;gap:12px"},
+    field("Date du décès","f-death-y",dateInputs("f-death",p.death,d=>patchPerson(id,{death:d,deceased:true},true))),
+    field("Lieu du décès","f-deathPlace",textInput("f-deathPlace",id,"deathPlace","Commune, département, pays")));
+  deathBox.style.display=dead.checked?"":"none";
+  sh.replaceChildren(
+    h("div",{class:"sheet-head"},h("span",{id:"sheet-avatar"}),h("h2",{id:"sheet-title"}),
+      h("button",{class:"btn icon","aria-label":"Fermer la fiche",onclick:closeSheet},"✕")),
+    h("div",{class:"sheet-body"},
+      h("div",{class:"actions"},h("button",{class:"btn",onclick:()=>{closeSheet();setFocus(id,true);showTab("arbre")}},"Voir dans l'arbre"),
+        h("button",{class:"btn",id:"btn-root",onclick:()=>{setRoot(id);toast("Personne de départ de l'arbre définie.");drawRelations()}},"Définir comme départ de l'arbre")),
+      h("section",{class:"sec"},h("h3",{},"Identité"),
+        h("div",{class:"grid2"},field("Premier prénom","f-given",textInput("f-given",id,"given")),field("Autres prénoms","f-otherGiven",textInput("f-otherGiven",id,"otherGiven"))),
+        field("Nom de naissance","f-surname",textInput("f-surname",id,"surname")),
+        seg,field("Profession","f-occupation",textInput("f-occupation",id,"occupation"))),
+      h("section",{class:"sec"},h("h3",{},"Naissance"),
+        field("Date","f-birth-y",dateInputs("f-birth",p.birth,d=>patchPerson(id,{birth:d},true))),
+        field("Lieu","f-birthPlace",textInput("f-birthPlace",id,"birthPlace","Commune, département, pays"))),
+      h("section",{class:"sec"},h("h3",{},"Décès"),
+        h("label",{for:"f-deceased",style:"display:flex;align-items:center;gap:10px;font-size:17px;color:var(--ink);margin:0"},dead,"Personne décédée"),deathBox),
+      h("div",{id:"rel",style:"display:flex;flex-direction:column;gap:14px"}),
+      h("section",{class:"sec"},h("h3",{},"Photos et documents",h("button",{class:"btn small",id:"btn-add-photo",onclick:()=>{$("file-photo").click()}},"+ Ajouter une image")),
+        h("div",{id:"photos",class:"photos"}),h("p",{class:"none",id:"photos-note"})),
+      h("section",{class:"sec"},h("h3",{},"Notes"),h("textarea",{id:"f-notes","aria-label":"Notes",placeholder:"Sources, anecdotes, pistes de recherche…",value:p.notes||"",
+        oninput:e=>patchPerson(id,{notes:e.target.value},true)})),
+      h("button",{class:"btn danger",style:"align-self:flex-start",onclick:async()=>{
+        if(await confirmBox("Supprimer cette fiche ?",fullName(P(id))+" sera placé dans la corbeille. Vous pourrez le restaurer depuis l'onglet Sauvegarde.","Mettre à la corbeille",true)){closeSheet();patchPerson(id,{deleted:Date.now()});toast("Fiche placée dans la corbeille.")}}},"Supprimer la fiche")));
+  sh.classList.add("on");$("scrim").classList.add("on");sh.querySelector(".sheet-body").scrollTop=0;
+  drawRelations(true);loadPhotos(id);
+}
+function closeSheet(){clearTimeout(renderT);S.sheetId=null;$("sheet").classList.remove("on");$("scrim").classList.remove("on");renderAll()}
+$("scrim").addEventListener("click",closeSheet);
+function chip(p,onRemove,removeLabel){return h("div",{class:"chip"},
+  h("button",{class:"go",onclick:()=>openSheet(p.id)},avatar(p),h("span",{},fullName(p)," ",h("small",{},lifespan(p)))),
+  onRemove&&h("button",{class:"btn small","aria-label":removeLabel+" "+fullName(p),onclick:onRemove},"Détacher"))}
+function divorceBox(u){
+  const upd=fn=>{const nu={...S.unions[u.id]};fn(nu);saveUnion(nu,true)};
+  const box=h("div",{style:"display:flex;flex-direction:column;gap:8px"},
+    dateInputs("v-"+u.id,u.divorce,d=>upd(nu=>{if(d)nu.divorce=d;else delete nu.divorce})),
+    h("input",{type:"text",id:"v-"+u.id+"-pl","aria-label":"Lieu du divorce",placeholder:"Lieu du divorce",value:u.divorcePlace||"",oninput:e=>upd(nu=>{const v=e.target.value.trim();if(v)nu.divorcePlace=v;else delete nu.divorcePlace})}));
+  const on=!!(u.divorced||hasDate(u.divorce)||u.divorcePlace);
+  const cb=h("input",{type:"checkbox",id:"v-"+u.id+"-on",style:"width:22px;height:22px;min-height:0",onchange:e=>{
+    upd(nu=>{if(e.target.checked)nu.divorced=true;else{delete nu.divorced;delete nu.divorce;delete nu.divorcePlace}});
+    if(!e.target.checked)box.querySelectorAll("input,select").forEach(i=>{i.value=""});
+    box.style.display=e.target.checked?"":"none"}});
+  cb.checked=on;box.style.display=on?"":"none";
+  return [h("label",{for:"v-"+u.id+"-on",style:"display:flex;align-items:center;gap:10px;font-size:16px;color:var(--ink);margin:0"},cb,"Divorcés"),box];
+}
+function drawRelations(force){
+  const id=S.sheetId,p=P(id),rel=$("rel");if(!rel)return;if(!p){closeSheet();return}
+  $("sheet-avatar").replaceChildren(avatar(p,true));
+  $("sheet-title").replaceChildren(longName(p),h("span",{class:"sub"},[fmtDate(p.birth)&&"° "+fmtDate(p.birth),fmtDate(p.death)&&"† "+fmtDate(p.death)].filter(Boolean).join("  ·  ")));
+  $("btn-root").style.display=S.meta.rootId===id?"none":"";
+  const act=document.activeElement;
+  if(force!==true&&act&&rel.contains(act)&&/^(INPUT|SELECT)$/.test(act.tagName))return; // do not rebuild a field being typed in
+  const parents=parentsOf(id),kids=childrenOf(id),us=unionsOf(id);
+  const sibs=allPeople().filter(x=>x.id!==id&&(x.parents||[]).some(y=>parents.some(pp=>pp.id===y))).sort(byBirth);
+  const desc=descendants(id),anc=ancestors(id);
+  const addParentBtn=parents.length<2&&h("button",{class:"btn small",onclick:async()=>{
+    const pid=await pickPerson({title:"Ajouter un parent de "+(p.given||fullName(p)),exclude:[id,...desc,...parents.map(x=>x.id)],surname:parents.length?"":p.surname||""});
+    if(pid)addParent(id,pid)}},"+ Ajouter un parent");
+  const addSpouse=h("button",{class:"btn small",onclick:async()=>{
+    const pid=await pickPerson({title:"Ajouter un conjoint de "+(p.given||fullName(p)),exclude:[id,...us.map(u=>u.a===id?u.b:u.a)],sex:p.sex==="M"?"F":p.sex==="F"?"M":""});
+    if(pid)saveUnion({id:newId(),a:id,b:pid})}},"+ Ajouter un conjoint");
+  const addChild=h("button",{class:"btn small",onclick:async()=>{
+    const cid=await pickPerson({title:"Ajouter un enfant de "+(p.given||fullName(p)),exclude:[id,...anc,...kids.map(x=>x.id)],surname:p.sex==="F"?"":p.surname||""});
+    if(!cid)return;const c=P(cid);
+    if((c.parents||[]).filter(x=>P(x)).length>=2){toast(fullName(c)+" a déjà deux parents. Détachez-en un d'abord.");return}
+    addParent(cid,id);
+    const partners=partnersOf(id).map(P).filter(x=>x&&x.id!==cid&&!(P(cid).parents||[]).includes(x.id));
+    if(partners.length&&(P(cid).parents||[]).length<2){
+      const other=await ask("Qui est l'autre parent ?","Autre parent de "+fullName(c)+" :",[...partners.map(x=>({label:fullName(x),value:x.id,cls:"primary"})),{label:"Inconnu ou autre",value:null}]);
+      if(other)addParent(cid,other)}}},"+ Ajouter un enfant");
+  rel.replaceChildren(
+    h("section",{class:"sec"},h("h3",{},"Parents",addParentBtn),parents.length?parents.map(x=>chip(x,()=>removeParent(id,x.id),"Détacher le parent")):h("p",{class:"none"},"Aucun parent renseigné.")),
+    h("section",{class:"sec"},h("h3",{},"Conjoints",addSpouse),us.length?us.map(u=>{const o=P(u.a===id?u.b:u.a);
+      return h("div",{class:"union"},chip(o,async()=>{if(await confirmBox("Détacher ce conjoint ?","Le lien entre "+fullName(p)+" et "+fullName(o)+" sera retiré. Les deux fiches sont conservées.","Détacher",true))deleteUnion(u.id)},"Détacher le conjoint"),
+        h("label",{},"Mariage ou union"),
+        dateInputs("u-"+u.id,u.date,d=>{const nu={...S.unions[u.id]};if(d)nu.date=d;else delete nu.date;saveUnion(nu,true)}),
+        h("input",{type:"text",id:"u-"+u.id+"-pl","aria-label":"Lieu du mariage",placeholder:"Lieu",value:u.place||"",oninput:e=>{const nu={...S.unions[u.id]};const v=e.target.value.trim();if(v)nu.place=v;else delete nu.place;saveUnion(nu,true)}}),
+        divorceBox(u))})
+      :h("p",{class:"none"},"Aucun conjoint renseigné.")),
+    h("section",{class:"sec"},h("h3",{},"Enfants",addChild),kids.length?kids.map(x=>chip(x,()=>removeParent(x.id,id),"Détacher l'enfant")):h("p",{class:"none"},"Aucun enfant renseigné.")),
+    ...(sibs.length?[h("section",{class:"sec"},h("h3",{},"Frères et sœurs"),sibs.map(x=>chip(x)))]:[]));
+}
+
+/* ---------- photos ---------- */
+function loadImage(file){return new Promise((res,rej)=>{const url=URL.createObjectURL(file),img=new Image();img.onload=()=>{URL.revokeObjectURL(url);res(img)};img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("image"))};img.src=url})}
+function shrink(img,max,q){const r=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement("canvas");c.width=Math.round(img.width*r);c.height=Math.round(img.height*r);
+  const g=c.getContext("2d");g.fillStyle="#fff";g.fillRect(0,0,c.width,c.height);g.drawImage(img,0,0,c.width,c.height);return c.toDataURL("image/jpeg",q)}
+function makeThumb(img){const s=Math.min(img.width,img.height),c=document.createElement("canvas");c.width=c.height=96;const g=c.getContext("2d");g.fillStyle="#fff";g.fillRect(0,0,96,96);
+  g.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,96,96);return c.toDataURL("image/jpeg",0.72)}
+function dataUrlToImage(u){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=u})}
+async function loadPhotos(id){
+  const box=$("photos"),note=$("photos-note"),btn=$("btn-add-photo");if(!box)return;
+  if(!idb){box.replaceChildren();btn.style.display="none";note.textContent="Les images ne peuvent pas être enregistrées dans ce navigateur.";return}
+  try{const list=(await mediaFor(id)).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+    if(S.sheetId!==id)return;const p=P(id);
+    box.replaceChildren(...list.map(m=>h("button",{onclick:()=>viewPhoto(m),"aria-label":m.caption||"Image"},h("img",{src:m.dataUrl,alt:m.caption||""}),p.photoId===m.id&&h("span",{class:"star"},"Portrait"))));
+    note.textContent=list.length?"":"Aucune image. Les photos sont réduites automatiquement pour rester légères.";
+  }catch(e){note.textContent="Les images n'ont pas pu être chargées."}
+}
+$("file-photo").addEventListener("change",async e=>{
+  const file=e.target.files[0],id=S.sheetId;e.target.value="";if(!file||!id||!idb)return;
+  try{
+    const img=await loadImage(file);let max=1400,q=0.8,url=shrink(img,max,q);
+    while(url.length>260000&&max>300){if(q>0.5)q-=0.1;else max=Math.round(max*0.8);url=shrink(img,max,q)}
+    const mid=newId(),now=Date.now();
+    await tx("media","readwrite",s=>s.put({id:mid,personId:id,caption:file.name.replace(/\.[^.]+$/,""),dataUrl:url,createdAt:now,updatedAt:now}));
+    mark("media/"+mid);
+    if(!P(id).photoId)patchPerson(id,{photoId:mid,thumb:makeThumb(img)});
+    toast("Image ajoutée.");loadPhotos(id);
+  }catch(err){toast("Cette image n'a pas pu être ajoutée. Essayez un fichier JPEG ou PNG.")}
+});
+function viewPhoto(m){
+  const id=S.sheetId,cap=h("input",{type:"text",id:"photo-caption","aria-label":"Légende",placeholder:"Légende",value:m.caption||""});
+  openModal([h("img",{class:"full",src:m.dataUrl,alt:m.caption||""}),cap,
+    h("div",{class:"actions"},
+      h("button",{class:"btn",onclick:async()=>{try{const img=await dataUrlToImage(m.dataUrl);patchPerson(id,{photoId:m.id,thumb:makeThumb(img)});closeModal();loadPhotos(id)}catch(e){toast("Impossible d'utiliser cette image.")}}},"Utiliser comme portrait"),
+      h("button",{class:"btn danger",onclick:async()=>{await put("media",{id:m.id,personId:id,purged:true,updatedAt:Date.now()});mark("media/"+m.id);if(P(id).photoId===m.id)patchPerson(id,{photoId:undefined,thumb:undefined});closeModal();loadPhotos(id)}},"Supprimer l'image"),
+      h("button",{class:"btn primary",onclick:async()=>{const v=cap.value.trim();if(v!==(m.caption||"")){await put("media",{...m,caption:v,updatedAt:Date.now()});mark("media/"+m.id)}closeModal();loadPhotos(id)}},"Fermer"))]);
+}
+
+/* ---------- files: end of session, import, GEDCOM ---------- */
+async function deliver(name,blob,type){
+  const touch=window.matchMedia&&matchMedia("(pointer:coarse)").matches;
+  try{const file=new File([blob],name,{type});
+    if(touch&&navigator.canShare&&navigator.canShare({files:[file]})){
+      try{await navigator.share({files:[file],title:name});return "shared"}catch(e){if(e&&e.name==="AbortError")return "cancel"}
+    }}catch(e){}
+  const url=URL.createObjectURL(blob),a=h("a",{href:url,download:name});document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+  return "downloaded";
+}
+function stamp(){const d=new Date(),z=n=>String(n).padStart(2,"0");return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate())+"-"+z(d.getHours())+"h"+z(d.getMinutes())}
+async function endSession(){
+  if(!Object.keys(S.people).length){toast("L'arbre est vide, il n'y a rien à sauvegarder.");return}
+  try{
+    const data={format:"arbre-de-famille",version:2,exportedAt:Date.now(),people:Object.values(S.people),unions:Object.values(S.unions),
+      meta:{rootId:S.meta.rootId,rootAt:S.meta.rootAt||0},media:await allMedia()};
+    const name="arbre-de-famille-"+stamp()+".json";
+    const r=await deliver(name,new Blob([JSON.stringify(data)],{type:"application/json"}),"application/json");
+    if(r==="cancel"){toast("Envoi annulé : le fichier n'a pas été créé.");return}
+    L.changed={};L.lastExportAt=Date.now();saveL();renderAll();
+    ask("Fichier créé",r==="shared"
+      ?["Le fichier "+name+" contient tout l'arbre et les photos.","Si vous l'avez envoyé par mail, vous le retrouverez sur l'autre appareil. Gardez ces mails : ce sont vos sauvegardes."]
+      :["Le fichier "+name+" est dans votre dossier Téléchargements. Il contient tout l'arbre et les photos.","Envoyez-le-vous par mail en pièce jointe pour le reprendre sur l'autre appareil. Gardez ces mails : ce sont vos sauvegardes."],
+      [{label:"Compris",value:true,cls:"primary"}]);
+  }catch(e){toast("Le fichier n'a pas pu être créé. Réessayez.")}
+}
+$("btn-end").addEventListener("click",endSession);
+function newer(rec,local){return !local||(rec.updatedAt||0)>(local.updatedAt||0)}
+async function importSession(f){
+  if(f.format!=="arbre-de-famille"||!Array.isArray(f.people))throw new Error("format");
+  const localMedia=index(await allMedia());
+  const takeP=f.people.filter(r=>r.id&&newer(r,S.people[r.id])),takeU=(f.unions||[]).filter(r=>r.id&&newer(r,S.unions[r.id])),takeM=(f.media||[]).filter(r=>r.id&&newer(r,localMedia[r.id]));
+  const fp=index(f.people),fu=index(f.unions||[]);
+  const mine=Object.values(S.people).filter(l=>!fp[l.id]||(l.updatedAt||0)>(fp[l.id].updatedAt||0)).length+Object.values(S.unions).filter(l=>!fu[l.id]||(l.updatedAt||0)>(fu[l.id].updatedAt||0)).length;
+  const n=takeP.length+takeU.length+takeM.length;
+  const when="Fichier créé le "+frDate(f.exportedAt,true)+".";
+  if(!n){S.asked=true;renderBanners();await ask("Rien de nouveau dans ce fichier",[when,"Cet appareil a déjà tout ce qu'il contient"+(mine?", et "+mine+" éléments plus récents.":".")],[{label:"D'accord",value:true,cls:"primary"}]);return}
+  const ok=await confirmBox("Charger ce fichier ?",[when,takeP.filter(live).length+" fiches et "+takeM.filter(m=>!m.purged).length+" images plus récentes vont être reprises.",
+    mine?mine+" éléments modifiés sur cet appareil après ce fichier sont conservés tels quels.":"Rien n'est perdu sur cet appareil : seules les fiches plus récentes du fichier remplacent les vôtres."],"Charger");
+  if(!ok)return;
+  for(const r of takeP){S.people[r.id]=r;await put("people",r)}
+  for(const r of takeU){S.unions[r.id]=r;await put("unions",r)}
+  if(idb)for(const r of takeM)await put("media",r);
+  if(f.meta&&f.meta.rootId&&(f.meta.rootAt||0)>=(S.meta.rootAt||0)){S.meta={...S.meta,rootId:f.meta.rootId,rootAt:f.meta.rootAt||0};await put("meta",S.meta,"app")}
+  L.lastImportAt=Date.now();saveL();S.asked=true;S.needCenter=true;renderAll();
+  toast("Fichier chargé : "+n+" éléments mis à jour.");
+}
+$("file-import").addEventListener("change",async e=>{
+  const file=e.target.files[0];e.target.value="";if(!file)return;
+  try{
+    const buf=await file.arrayBuffer();let text;
+    try{text=new TextDecoder("utf-8",{fatal:true}).decode(buf)}catch(_){text=new TextDecoder("windows-1252").decode(buf)}
+    if(text.trim().startsWith("{")){await importSession(JSON.parse(text));return}
+    const r=gedParse(text,newId);
+    if(!r.people.length)throw new Error("vide");
+    if(!await confirmBox("Importer ce fichier GEDCOM ?",r.people.length+" personnes et "+r.unions.length+" unions vont être ajoutées à l'arbre. Les fiches existantes ne sont pas modifiées.","Importer"))return;
+    const now=Date.now();
+    for(const p of r.people){S.people[p.id]={...p,createdAt:now,updatedAt:now};await put("people",S.people[p.id]);L.changed["people/"+p.id]=1}
+    for(const u of r.unions){u.updatedAt=now;S.unions[u.id]=u;await put("unions",u);L.changed["unions/"+u.id]=1}
+    saveL();if(!P(S.meta.rootId))setRoot(r.people[0].id);
+    S.asked=true;renderAll();toast(r.people.length+" personnes importées.");
+  }catch(err){toast("Ce fichier n'a pas pu être lu. Choisissez un fichier arbre-de-famille…json ou un fichier .ged.")}
+});
+function buildBackup(m){m.append(h("div",{class:"page",id:"backup"}))}
+function drawBackup(){
+  const el=$("backup");if(!el)return;
+  const n=allPeople().length,ch=Object.keys(L.changed).length,trash=Object.values(S.people).filter(p=>p.deleted&&!p.purged);
+  el.replaceChildren(
+    h("section",{class:"panel"},h("h2",{},"Passer d'un appareil à l'autre"),
+      h("p",{},"L'arbre est enregistré sur chaque appareil séparément. Un fichier fait le lien entre les deux."),
+      h("ol",{class:"steps"},
+        h("li",{},h("b",{},"En fin de session"),", touchez « Terminer la session » et envoyez-vous le fichier par mail."),
+        h("li",{},h("b",{},"Sur l'autre appareil"),", ouvrez le mail et enregistrez la pièce jointe (sur iPad : « Enregistrer dans Fichiers »)."),
+        h("li",{},h("b",{},"Avant de reprendre"),", touchez « Charger un fichier » et choisissez cette pièce jointe.")),
+      h("p",{},"En cas d'oubli, rien n'est écrasé : au chargement, chaque fiche garde sa version la plus récente, d'où qu'elle vienne."),
+      h("div",{class:"actions"},h("button",{class:"btn primary",onclick:endSession},"Terminer la session"),h("button",{class:"btn",onclick:()=>$("file-import").click()},"Charger un fichier"))),
+    h("section",{class:"panel"},h("h2",{},"État sur cet appareil"),
+      h("p",{},n+(n>1?" personnes":" personne")+" dans l'arbre. "+(ch?ch+(ch>1?" modifications ne sont":" modification n'est")+" pas encore dans un fichier.":"Tout est dans le dernier fichier.")),
+      h("p",{},(L.lastExportAt?"Dernier fichier créé ici le "+frDate(L.lastExportAt,true)+". ":"Aucun fichier créé depuis cet appareil. ")+(L.lastImportAt?"Dernier fichier chargé ici le "+frDate(L.lastImportAt,true)+".":""))),
+    h("section",{class:"panel"},h("h2",{},"GEDCOM"),
+      h("p",{},"Le format .ged est lu par Geneanet, Heredis, Gramps et les autres logiciels de généalogie. Il contient les personnes et leurs liens, sans les photos."),
+      h("div",{class:"actions"},h("button",{class:"btn",onclick:async()=>{if(!n){toast("L'arbre est vide.");return}
+        const r=await deliver("arbre-"+stamp()+".ged",new Blob([gedExport(Object.values(S.people).filter(p=>!p.purged),allUnions())],{type:"text/plain"}),"text/plain");if(r!=="cancel")toast("Fichier GEDCOM créé.")}},"Exporter en .ged"),
+        h("button",{class:"btn",onclick:()=>$("file-import").click()},"Importer un .ged"))),
+    h("section",{class:"panel"},h("h2",{},"Corbeille"),
+      trash.length?trash.map(p=>h("div",{class:"chip"},h("span",{class:"go"},avatar(p),h("span",{},fullName(p))),
+        h("button",{class:"btn small",onclick:()=>patchPerson(p.id,{deleted:undefined})},"Restaurer"),
+        h("button",{class:"btn small danger",onclick:async()=>{if(await confirmBox("Supprimer définitivement ?","La fiche de "+fullName(p)+", ses liens et ses images seront effacés pour de bon, sur cet appareil puis sur l'autre au prochain chargement de fichier.","Supprimer définitivement",true))purgePerson(p.id)}},"Effacer")))
+      :h("p",{},"La corbeille est vide. Les fiches supprimées y restent tant que vous ne les effacez pas.")));
+}
+
+/* ---------- boot ---------- */
+window.addEventListener("beforeunload",e=>{if(Object.keys(L.changed).length){e.preventDefault();e.returnValue=""}});
+async function boot(){
+  try{const c=JSON.parse(localStorage.getItem(LS+"cache")||"null");if(c){S.people=c.people||{};S.unions=c.unions||{};S.meta=c.meta||{}}
+    L={...L,...JSON.parse(localStorage.getItem(LS+"local")||"{}")};if(!L.changed)L.changed={};
+    S.focus=localStorage.getItem(LS+"focus")||null}catch(e){}
+  const t=location.hash.slice(1);showTab(["arbre","personnes","sauvegarde"].includes(t)?t:"arbre");
+  try{
+    idb=await idbOpen();
+    const [pp,uu,meta]=await Promise.all([tx("people","readonly",s=>s.getAll()),tx("unions","readonly",s=>s.getAll()),tx("meta","readonly",s=>s.get("app"))]);
+    if(pp.length||uu.length){
+      // keep whichever copy of a record is newer between the database and the quick cache
+      const merge=(db,cache)=>{const m=index(db);for(const r of Object.values(cache))if(newer(r,m[r.id]))m[r.id]=r;return m};
+      S.people=merge(pp,S.people);S.unions=merge(uu,S.unions);S.meta=meta||S.meta;
+    }else{for(const p of Object.values(S.people))await put("people",p);for(const u of Object.values(S.unions))await put("unions",u);if(S.meta.rootId)await put("meta",S.meta,"app")}
+    if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
+  }catch(e){idb=null;S.storeErr=true}
+  S.ready=true;S.needCenter=true;renderAll();
+}
+boot();
+</script>
+</body>
+</html>
