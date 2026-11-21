@@ -85,6 +85,9 @@ main{flex:1;min-height:0;display:flex;flex-direction:column}
 .avatar{flex:none;width:40px;height:40px;border-radius:50%;background:var(--paper);color:var(--muted);display:grid;place-items:center;font-weight:600;font-size:14px;overflow:hidden;border:1px solid var(--line)}
 .avatar img{width:100%;height:100%;object-fit:cover;display:block}
 .avatar.big{width:72px;height:72px;font-size:24px}
+.sosa{position:absolute;top:-10px;right:8px;background:var(--gold-bg);color:var(--ink);border:1px solid var(--gold);font-size:11px;font-weight:600;line-height:16px;padding:0 6px;border-radius:8px;font-variant-numeric:tabular-nums}
+.card.ghost{border:1.5px dashed var(--muted);border-left-width:1.5px;background:transparent;box-shadow:none;color:var(--muted);font-size:14px;justify-content:center;text-align:center}
+.tag{display:inline-block;margin-left:8px;background:var(--gold-bg);border:1px solid var(--gold);font-size:12px;font-weight:600;padding:0 6px;border-radius:8px;vertical-align:middle;font-variant-numeric:tabular-nums}
 .zoom{position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;gap:6px}
 .hint{position:absolute;left:12px;bottom:12px;font-size:13px;color:var(--muted);background:var(--surface);padding:6px 10px;border-radius:8px;border:1px solid var(--line);max-width:60%}
 
@@ -316,7 +319,7 @@ function gedParse(text,newId){
 /* ===== END PURE ===== */
 
 const LS="arbre.v2.";
-const S={people:{},unions:{},meta:{},tab:"arbre",focus:null,sheetId:null,search:"",sort:"surname",dir:1,up:4,down:3,view:{x:0,y:0,k:1},storeErr:false,asked:false};
+const S={people:{},unions:{},meta:{},tab:"arbre",focus:null,sheetId:null,search:"",sort:"surname",dir:1,up:4,down:3,mode:"full",sosa:new Map(),view:{x:0,y:0,k:1},storeErr:false,asked:false};
 let L={changed:{},lastExportAt:0,lastImportAt:0};
 let idb=null;
 
@@ -348,7 +351,18 @@ function lifespan(p){
   if(b&&d)return b+" – "+d;if(b)return (p.deceased?"° ":"né"+(p.sex==="F"?"e":"")+" en ")+b;if(d)return "† "+d;return p.deceased?"décédé"+(p.sex==="F"?"e":""):"";
 }
 const byBirth=(a,b)=>(dateKey(a.birth)??9e9)-(dateKey(b.birth)??9e9);
-const parentsOf=id=>((P(id)||{}).parents||[]).map(P).filter(Boolean).sort((a,b)=>(a.sex==="M"?0:a.sex==="F"?2:1)-(b.sex==="M"?0:b.sex==="F"?2:1));
+// [père, mère] : un homme va à gauche, une femme à droite, un sexe inconnu prend la place restante
+function parentSlots(id){const ps=((P(id)||{}).parents||[]).map(P).filter(Boolean),sl=[null,null];
+  for(const p of ps){const want=p.sex==="F"?1:p.sex==="M"?0:-1;if(want>=0&&!sl[want])sl[want]=p}
+  for(const p of ps){if(sl.includes(p))continue;if(!sl[0])sl[0]=p;else if(!sl[1])sl[1]=p}
+  return sl}
+const parentsOf=id=>parentSlots(id).filter(Boolean);
+// numérotation Sosa depuis la personne de départ : père = 2n, mère = 2n+1 ; un ancêtre présent plusieurs fois garde son plus petit numéro
+function computeSosa(){const m=new Map(),root=P(S.meta.rootId);S.sosa=m;if(!root)return;
+  let level=[[root.id,1]];
+  while(level.length){const next=[];
+    for(const [id,n] of level){if(m.has(id))continue;m.set(id,n);const [f,mo]=parentSlots(id);if(f)next.push([f.id,2*n]);if(mo)next.push([mo.id,2*n+1])}
+    level=next.sort((a,b)=>a[1]-b[1])}}
 const childrenOf=id=>allPeople().filter(p=>(p.parents||[]).includes(id)).sort(byBirth);
 const unionsOf=id=>allUnions().filter(u=>(u.a===id&&P(u.b))||(u.b===id&&P(u.a)));
 function partnersOf(id){
@@ -473,7 +487,7 @@ function showTab(tab){
   renderAll();
 }
 document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
-function renderAll(){renderStatus();renderBanners();
+function renderAll(){computeSosa();renderStatus();renderBanners();
   if(S.tab==="arbre")drawTree();else if(S.tab==="personnes")drawList();else drawBackup();
   if(S.sheetId)drawRelations();}
 function emptyState(){return h("div",{class:"empty"},h("h2",{},"Commencez votre arbre"),
@@ -489,7 +503,9 @@ function buildTree(m){
     Array.from({length:max},(_,i)=>h("option",{value:String(i+1)},String(i+1))));
   m.append(h("div",{class:"toolbar",id:"tree-bar"},
     h("button",{class:"btn",id:"btn-open-focus",onclick:()=>S.focus&&openSheet(S.focus)},"Ouvrir la fiche"),
-    h("span",{class:"lbl"},"Ancêtres"),gens("sel-up",S.up,7),h("span",{class:"lbl"},"Descendants"),gens("sel-down",S.down,6),
+    h("select",{id:"sel-mode","aria-label":"Type de vue",value:S.mode,onchange:e=>{S.mode=e.target.value;setPref("mode",S.mode);S.needCenter=true;drawTree()}},
+      h("option",{value:"full"},"Vue complète"),h("option",{value:"asc"},"Arbre ascendant")),
+    h("span",{class:"lbl"},"Ancêtres"),gens("sel-up",S.up,7),h("span",{class:"lbl",id:"lbl-down"},"Descendants"),gens("sel-down",S.down,6),
     h("button",{class:"btn",onclick:()=>{const r=S.meta.rootId;if(P(r))setFocus(r)}},"Revenir au départ"),
     h("button",{class:"btn",onclick:addFirst},"+ Personne")),
    h("div",{id:"viewport"},h("div",{id:"world"}),
@@ -544,6 +560,29 @@ function layout(focus){
   linkA(ar,0,dx);
   return {cards,links,fx:fx-CW/2,fy:0};
 }
+// arbre ascendant : uniquement les ancêtres, père toujours à gauche et mère toujours à droite
+function layoutAsc(focus){
+  const cards=[],links=[],ghosts=[];
+  function anc(id,depth,path){
+    let pr=[];
+    if(depth<S.up){const sl=parentSlots(id),one=sl[0]||sl[1];
+      pr=sl.map((p,i)=>p?(path.has(p.id)?null:anc(p.id,depth+1,new Set(path).add(p.id))):(one||depth===0?{ghost:true,child:id,slot:i,w:CW}:null)).filter(Boolean)}
+    const pw=pr.reduce((t,c)=>t+c.w,0)+GX*Math.max(0,pr.length-1);
+    return {id,pr,pw,w:Math.max(CW,pw)};
+  }
+  function place(n,left,lvl){
+    n.cx=left+n.w/2;const y=lvl*(CH+GY);cards.push({id:n.id,x:n.cx-CW/2,y});
+    let x=left+(n.w-n.pw)/2;
+    for(const c of n.pr){
+      if(c.ghost){c.cx=x+CW/2;ghosts.push({x,y:y-CH-GY,child:c.child,slot:c.slot})}else place(c,x,lvl-1);
+      links.push(`M${n.cx},${y}V${y-GY/2}H${c.cx}V${y-GY}`);x+=c.w+GX}
+  }
+  const root=anc(focus,0,new Set([focus]));place(root,0,0);
+  return {cards,links,ghosts,fx:root.cx-CW/2,fy:0};
+}
+async function ghostAdd(child,slot){const c=P(child);if(!c)return;
+  const pid=await pickPerson({title:(slot?"Ajouter la mère de ":"Ajouter le père de ")+(c.given||fullName(c)),exclude:[child,...descendants(child),...parentsOf(child).map(x=>x.id)],sex:slot?"F":"M",surname:slot?"":c.surname||""});
+  if(pid)addParent(child,pid)}
 let lastLayout=null;
 function drawTree(animate){
   const vp=$("viewport");if(!vp)return;
@@ -553,13 +592,15 @@ function drawTree(animate){
     if(!empty)$("main").append(Object.assign(emptyState(),{id:"tree-empty"}));return}
   if(empty)empty.remove();bar.style.display="";vp.style.display="";
   if(!P(S.focus))S.focus=P(S.meta.rootId)?S.meta.rootId:people.sort(byBirth)[0].id;
-  const Lo=layout(S.focus);lastLayout=Lo;
+  const Lo=S.mode==="asc"?layoutAsc(S.focus):layout(S.focus);lastLayout=Lo;
+  $("sel-down").style.display=$("lbl-down").style.display=S.mode==="asc"?"none":"";
   const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");svg.setAttribute("width","1");svg.setAttribute("height","1");
   for(const d of Lo.links){const p=document.createElementNS("http://www.w3.org/2000/svg","path");p.setAttribute("d",d);svg.append(p)}
   const nodes=[svg];
   for(const c of Lo.cards){const p=P(c.id);if(!p)continue;
     nodes.push(h("button",{class:"card "+(p.sex||"")+(c.id===S.focus?" focus":""),style:`left:${c.x}px;top:${c.y}px`,"data-id":c.id,
-      "aria-label":fullName(p)},avatar(p),h("span",{class:"txt"},h("span",{class:"n1"},p.given||"—"),h("span",{class:"n2"},(p.surname||"").toUpperCase()||"—"),h("span",{class:"n3"},lifespan(p)))))}
+      "aria-label":fullName(p)},S.sosa.get(c.id)&&h("span",{class:"sosa"},"Sosa "+S.sosa.get(c.id)),avatar(p),h("span",{class:"txt"},h("span",{class:"n1"},p.given||"—"),h("span",{class:"n2"},(p.surname||"").toUpperCase()||"—"),h("span",{class:"n3"},lifespan(p)))))}
+  for(const g of Lo.ghosts||[])nodes.push(h("button",{class:"card ghost",style:`left:${g.x}px;top:${g.y}px`,"data-ghost":"1","data-child":g.child,"data-slot":String(g.slot)},g.slot?"+ Ajouter la mère":"+ Ajouter le père"));
   world.replaceChildren(...nodes);
   $("btn-open-focus").textContent="Ouvrir la fiche de "+(P(S.focus).given||fullName(P(S.focus)));
   if(S.needCenter){S.needCenter=false;centerOn(animate)}
@@ -567,7 +608,7 @@ function drawTree(animate){
 function applyView(anim){const w=$("world");if(!w)return;w.classList.toggle("anim",!!anim);w.style.transform=`translate(${S.view.x}px,${S.view.y}px) scale(${S.view.k})`}
 function centerOn(anim){const vp=$("viewport");if(!vp||!lastLayout)return;const r=vp.getBoundingClientRect();
   if(!S.view.init){S.view.k=r.width<700?0.8:1;S.view.init=true}
-  S.view.x=r.width/2-(lastLayout.fx+CW/2)*S.view.k;S.view.y=r.height/2-(lastLayout.fy+CH/2)*S.view.k;applyView(anim)}
+  S.view.x=r.width/2-(lastLayout.fx+CW/2)*S.view.k;S.view.y=r.height*(S.mode==="asc"?0.78:0.5)-(lastLayout.fy+CH/2)*S.view.k;applyView(anim)}
 function zoomAt(f,cx,cy){const k=Math.min(2.5,Math.max(0.2,S.view.k*f)),r=k/S.view.k;S.view.x=cx-(cx-S.view.x)*r;S.view.y=cy-(cy-S.view.y)*r;S.view.k=k;applyView()}
 function zoomBy(f){const r=$("viewport").getBoundingClientRect();zoomAt(f,r.width/2,r.height/2)}
 function bindPanZoom(vp){
@@ -582,6 +623,7 @@ function bindPanZoom(vp){
   vp.addEventListener("pointerup",up);vp.addEventListener("pointercancel",up);
   vp.addEventListener("wheel",e=>{e.preventDefault();const r=vp.getBoundingClientRect();zoomAt(e.deltaY<0?1.12:0.89,e.clientX-r.left,e.clientY-r.top)},{passive:false});
   vp.addEventListener("click",e=>{const c=e.target.closest(".card");if(!c)return;if(moved>8){moved=0;return}
+    if(c.dataset.ghost){ghostAdd(c.dataset.child,+c.dataset.slot);return}
     const id=c.dataset.id;if(id===S.focus)openSheet(id);else setFocus(id)});
 }
 
@@ -591,7 +633,7 @@ function buildList(m){
     h("input",{type:"search",class:"grow",id:"list-search",placeholder:"Chercher un nom, un prénom, un lieu…","aria-label":"Chercher",value:S.search,oninput:e=>{S.search=e.target.value;drawList()}}),
     h("span",{class:"lbl"},"Trier par"),
     h("select",{id:"list-sort",value:S.sort,onchange:e=>{S.sort=e.target.value;drawList()}},
-      h("option",{value:"surname"},"Nom"),h("option",{value:"given"},"Prénom"),h("option",{value:"birth"},"Date de naissance"),h("option",{value:"death"},"Date de décès"),h("option",{value:"updated"},"Dernière modification")),
+      h("option",{value:"surname"},"Nom"),h("option",{value:"given"},"Prénom"),h("option",{value:"birth"},"Date de naissance"),h("option",{value:"death"},"Date de décès"),h("option",{value:"sosa"},"Numéro Sosa"),h("option",{value:"updated"},"Dernière modification")),
     h("select",{id:"list-dir","aria-label":"Ordre du tri",value:String(S.dir),onchange:e=>{S.dir=+e.target.value;drawList()}},
       h("option",{value:"1"},"Croissant"),h("option",{value:"-1"},"Décroissant")),
     h("button",{class:"btn primary",onclick:addFirst},"+ Personne")),
@@ -603,14 +645,14 @@ function drawList(){
   if(!ps.length){el.replaceChildren(emptyState());return}
   if(q)ps=ps.filter(p=>[p.given,p.otherGiven,p.surname,p.birthPlace,p.deathPlace,p.occupation].join(" ").toLowerCase().includes(q));
   const txt=v=>(v||"").trim().toLowerCase()||null;
-  const key={surname:p=>txt(p.surname),given:p=>txt(p.given),birth:p=>dateKey(p.birth),death:p=>dateKey(p.death),updated:p=>p.updatedAt||null}[S.sort];
+  const key={surname:p=>txt(p.surname),given:p=>txt(p.given),birth:p=>dateKey(p.birth),death:p=>dateKey(p.death),sosa:p=>S.sosa.get(p.id)||null,updated:p=>p.updatedAt||null}[S.sort];
   const cmpv=(a,b)=>typeof a==="string"?a.localeCompare(b,"fr"):a-b;
   ps.sort((a,b)=>{const ka=key(a),kb=key(b);
     if(ka===null||kb===null)return ka===kb?0:ka===null?1:-1; // fiches sans valeur toujours en fin de liste
     return cmpv(ka,kb)*S.dir||txt(a.given||"")?.localeCompare(txt(b.given||"")||"","fr")||0});
   el.replaceChildren(h("p",{class:"none",style:"margin:0 0 8px"},ps.length+(ps.length>1?" personnes":" personne")),
     ...ps.map(p=>h("button",{class:"row",onclick:()=>openSheet(p.id)},avatar(p),
-      h("span",{class:"who"},h("b",{},(p.surname||"").toUpperCase()||"—")," ",p.given||""),
+      h("span",{class:"who"},h("b",{},(p.surname||"").toUpperCase()||"—")," ",p.given||"",S.sosa.get(p.id)&&h("span",{class:"tag"},"Sosa "+S.sosa.get(p.id))),
       h("span",{class:"col"},fmtDate(p.birth)?"° "+fmtDate(p.birth):""),
       h("span",{class:"col"},fmtDate(p.death)?"† "+fmtDate(p.death):""),
       h("span",{class:"col place"},p.birthPlace||""))));
@@ -647,7 +689,7 @@ function openSheet(id){
       h("button",{class:"btn icon","aria-label":"Fermer la fiche",onclick:closeSheet},"✕")),
     h("div",{class:"sheet-body"},
       h("div",{class:"actions"},h("button",{class:"btn",onclick:()=>{closeSheet();setFocus(id,true);showTab("arbre")}},"Voir dans l'arbre"),
-        h("button",{class:"btn",id:"btn-root",onclick:()=>{setRoot(id);toast("Personne de départ de l'arbre définie.");drawRelations()}},"Définir comme départ de l'arbre")),
+        h("button",{class:"btn",id:"btn-root",onclick:()=>{setRoot(id);toast("Point de départ défini : les numéros Sosa sont recalculés.");renderAll()}},"Définir comme départ (Sosa 1)")),
       h("section",{class:"sec"},h("h3",{},"Identité"),
         h("div",{class:"grid2"},field("Premier prénom","f-given",textInput("f-given",id,"given")),field("Autres prénoms","f-otherGiven",textInput("f-otherGiven",id,"otherGiven"))),
         field("Nom de naissance","f-surname",textInput("f-surname",id,"surname")),
@@ -688,7 +730,7 @@ function divorceBox(u){
 function drawRelations(force){
   const id=S.sheetId,p=P(id),rel=$("rel");if(!rel)return;if(!p){closeSheet();return}
   $("sheet-avatar").replaceChildren(avatar(p,true));
-  $("sheet-title").replaceChildren(longName(p),h("span",{class:"sub"},[fmtDate(p.birth)&&"° "+fmtDate(p.birth),fmtDate(p.death)&&"† "+fmtDate(p.death)].filter(Boolean).join("  ·  ")));
+  $("sheet-title").replaceChildren(longName(p),h("span",{class:"sub"},[S.sosa.get(id)&&"Sosa "+S.sosa.get(id),fmtDate(p.birth)&&"° "+fmtDate(p.birth),fmtDate(p.death)&&"† "+fmtDate(p.death)].filter(Boolean).join("  ·  ")));
   $("btn-root").style.display=S.meta.rootId===id?"none":"";
   const act=document.activeElement;
   if(force!==true&&act&&rel.contains(act)&&/^(INPUT|SELECT)$/.test(act.tagName))return; // do not rebuild a field being typed in
@@ -856,7 +898,7 @@ window.addEventListener("beforeunload",e=>{if(Object.keys(L.changed).length){e.p
 async function boot(){
   try{const c=JSON.parse(localStorage.getItem(LS+"cache")||"null");if(c){S.people=c.people||{};S.unions=c.unions||{};S.meta=c.meta||{}}
     L={...L,...JSON.parse(localStorage.getItem(LS+"local")||"{}")};if(!L.changed)L.changed={};
-    S.focus=localStorage.getItem(LS+"focus")||null}catch(e){}
+    S.focus=localStorage.getItem(LS+"focus")||null;if(localStorage.getItem(LS+"mode")==="asc")S.mode="asc"}catch(e){}
   const t=location.hash.slice(1);showTab(["arbre","personnes","sauvegarde"].includes(t)?t:"arbre");
   try{
     idb=await idbOpen();
