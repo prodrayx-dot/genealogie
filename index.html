@@ -72,6 +72,8 @@ main{flex:1;min-height:0;display:flex;flex-direction:column}
 #viewport{flex:1;min-height:320px;position:relative;overflow:hidden;touch-action:none;cursor:grab;
   background-image:radial-gradient(var(--line) 1px,transparent 1px);background-size:24px 24px}
 #viewport.drag{cursor:grabbing}
+#viewport{-webkit-user-select:none;user-select:none}
+#viewport img{-webkit-user-drag:none;pointer-events:none}
 #world{position:absolute;left:0;top:0;transform-origin:0 0}
 #world svg{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
 #world svg path{fill:none;stroke:var(--muted);stroke-width:1.5}
@@ -335,6 +337,13 @@ function gedParse(text,newId){
   }
   return {people,unions};
 }
+const CP1252="€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008DŽ\u008F\u0090‘’“”•–—˜™š›œ\u009DžŸ";
+function fixMojibake(str){ // « ZoÃ© » -> « Zoé » ; ne touche à rien si le texte est déjà correct
+  if(typeof str!=="string"||!/[Â-ô]/.test(str))return str;
+  const bytes=new Uint8Array(str.length);
+  for(let i=0;i<str.length;i++){const c=str.charCodeAt(i);if(c<256)bytes[i]=c;else{const k=CP1252.indexOf(str[i]);if(k<0)return str;bytes[i]=0x80+k}}
+  try{return new TextDecoder("utf-8",{fatal:true}).decode(bytes)}catch(e){return str}
+}
 /* ===== END PURE ===== */
 
 const LS="arbre.v2.";
@@ -480,6 +489,15 @@ function pickPerson({title,exclude=[],surname="",sex=""}){return new Promise(res
   if(!hasPeople)g.focus();
 })}
 
+/* ---------- repair of badly decoded accents ---------- */
+const MOJI={people:["given","otherGiven","surname","birthPlace","deathPlace","occupation","notes"],unions:["place","divorcePlace"]};
+function mojiPatch(rec,fields){let out=null;for(const f of fields){const v=rec[f],x=fixMojibake(v);if(x!==v)(out=out||{})[f]=x}return out}
+function mojiCount(){let n=0;for(const p of allPeople())if(mojiPatch(p,MOJI.people))n++;for(const u of allUnions())if(mojiPatch(u,MOJI.unions))n++;return n}
+function mojiRepair(){let n=0;const now=Date.now();
+  for(const p of allPeople()){const d=mojiPatch(p,MOJI.people);if(d){S.people[p.id]={...p,...d,updatedAt:now};put("people",S.people[p.id]);L.changed["people/"+p.id]=1;n++}}
+  for(const u of allUnions()){const d=mojiPatch(u,MOJI.unions);if(d){S.unions[u.id]={...u,...d,updatedAt:now};put("unions",S.unions[u.id]);L.changed["unions/"+u.id]=1;n++}}
+  saveL();renderAll();toast(n+" fiches corrigées.")}
+
 /* ---------- status & banners ---------- */
 function renderStatus(){
   const el=$("status"),n=Object.keys(L.changed).length;
@@ -491,6 +509,8 @@ function renderStatus(){
 function renderBanners(){
   const b=$("banners");b.replaceChildren();
   if(S.storeErr)b.append(h("div",{class:"banner bad"},"Ce navigateur refuse d'enregistrer les données (navigation privée ?). Ne fermez pas la page sans avoir touché « Terminer la session » pour récupérer votre fichier."));
+  const mj=S.ready?mojiCount():0;
+  if(mj)b.append(h("div",{class:"banner"},"Des accents ont été mal importés dans "+mj+(mj>1?" fiches":" fiche")+" (par exemple « Ã© » à la place de « é »).",h("button",{class:"btn small primary",onclick:mojiRepair},"Corriger les accents")));
   if(!S.asked&&S.ready&&allPeople().length)b.append(h("div",{class:"banner"},
     "Avant de commencer : avez-vous travaillé sur l'autre appareil depuis votre dernière visite ici ? Si oui, chargez d'abord son fichier.",
     h("button",{class:"btn small primary",onclick:()=>$("file-import").click()},"Charger un fichier"),
@@ -615,7 +635,8 @@ function zoomAt(f,cx,cy){const k=Math.min(2.5,Math.max(0.2,S.view.k*f)),r=k/S.vi
 function zoomBy(f){const r=$("viewport").getBoundingClientRect();zoomAt(f,r.width/2,r.height/2)}
 function bindPanZoom(vp){
   const pts=new Map();let moved=0,pinch=0,captured=false;
-  vp.addEventListener("pointerdown",e=>{if(e.target.closest(".zoom"))return;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pts.size===1){moved=0;captured=false}pinch=0});
+  vp.addEventListener("dragstart",e=>e.preventDefault());
+  vp.addEventListener("pointerdown",e=>{if(e.target.closest(".zoom"))return;try{const sel=window.getSelection();if(sel&&!sel.isCollapsed)sel.removeAllRanges()}catch(_){}pts.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pts.size===1){moved=0;captured=false}pinch=0});
   vp.addEventListener("pointermove",e=>{const p=pts.get(e.pointerId);if(!p)return;
     const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
     if(pts.size===1){moved+=Math.abs(dx)+Math.abs(dy);if(moved>8){if(!captured){captured=true;try{vp.setPointerCapture(e.pointerId)}catch(_){}vp.classList.add("drag")}S.view.x+=dx;S.view.y+=dy;applyView()}}
@@ -916,6 +937,7 @@ $("file-import").addEventListener("change",async e=>{
     const buf=await file.arrayBuffer();let text;
     try{text=new TextDecoder("utf-8",{fatal:true}).decode(buf)}catch(_){text=new TextDecoder("windows-1252").decode(buf)}
     if(text.trim().startsWith("{")){await importSession(JSON.parse(text));return}
+    text=text.split("\n").map(fixMojibake).join("\n");
     const r=gedParse(text,newId);
     if(!r.people.length)throw new Error("vide");
     if(!await confirmBox("Importer ce fichier GEDCOM ?",r.people.length+" personnes et "+r.unions.length+" unions vont être ajoutées à l'arbre. Les fiches existantes ne sont pas modifiées.","Importer"))return;
